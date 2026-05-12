@@ -6,14 +6,14 @@ from cdk_base.cdk_base_stack import CdkBaseStack
 
 
 @pytest.fixture
-def template() -> assertions.Template:
+def cdk_base_template() -> assertions.Template:
     app = core.App()
     stack = CdkBaseStack(app, "cdk-base")
     return assertions.Template.from_stack(stack)
 
 
-def test_template_has_description(template: assertions.Template):
-    template.template_matches(
+def test_template_has_description(cdk_base_template: assertions.Template):
+    cdk_base_template.template_matches(
         assertions.Match.object_like(
             {"Description": "Event-driven sleep audio pipeline base infrastructure"}
         )
