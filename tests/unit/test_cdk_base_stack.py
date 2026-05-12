@@ -12,7 +12,7 @@ def template() -> assertions.Template:
     return assertions.Template.from_stack(stack)
 
 
-def test_cdk_metadata_resource_is_present(template: assertions.Template):
+def test_template_has_description(template: assertions.Template):
     template.template_matches(
         assertions.Match.object_like(
             {"Description": "Event-driven sleep audio pipeline base infrastructure"}
