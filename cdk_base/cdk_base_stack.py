@@ -9,6 +9,7 @@ class CdkBaseStack(Stack):
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
+        self.template_options.description = "Event-driven sleep audio pipeline base infrastructure"
 
         # The code that defines your stack goes here
 
