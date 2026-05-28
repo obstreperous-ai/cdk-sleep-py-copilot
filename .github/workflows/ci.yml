@@ -33,7 +33,7 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Install AWS CDK CLI
-        run: npm install --global aws-cdk
+        run: npm install --global aws-cdk@2
 
       - name: Run pytest
         run: pytest
