@@ -1,15 +1,20 @@
 import aws_cdk as core
 import aws_cdk.assertions as assertions
+import pytest
 
 from cdk_base.cdk_base_stack import CdkBaseStack
 
-# example tests. To run these tests, uncomment this file along with the example
-# resource in cdk_base/cdk_base_stack.py
-def test_sqs_queue_created():
+
+@pytest.fixture
+def cdk_base_template() -> assertions.Template:
     app = core.App()
     stack = CdkBaseStack(app, "cdk-base")
-    template = assertions.Template.from_stack(stack)
+    return assertions.Template.from_stack(stack)
 
-#     template.has_resource_properties("AWS::SQS::Queue", {
-#         "VisibilityTimeout": 300
-#     })
+
+def test_template_has_description(cdk_base_template: assertions.Template):
+    cdk_base_template.template_matches(
+        assertions.Match.object_like(
+            {"Description": "Event-driven sleep audio pipeline base infrastructure"}
+        )
+    )
