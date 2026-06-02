@@ -1,7 +1,14 @@
 
-# Welcome to your CDK Python project!
+# Event-Driven Sleep Audio Pipeline (CDK Python)
 
-This is a blank project for CDK development with Python.
+A serverless, event-driven AWS pipeline that ingests raw audio, processes it into
+soothing sleep audio, and stores the result with metadata and notifications.
+
+> 📐 **Design source of truth:** see [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the
+> full system design and Mermaid diagram, and [`AGENT_GUIDELINES.md`](./AGENT_GUIDELINES.md)
+> for the TDD and contribution workflow.
+
+This is a CDK project for Python.
 
 The `cdk.json` file tells the CDK Toolkit how to execute your app.
 
