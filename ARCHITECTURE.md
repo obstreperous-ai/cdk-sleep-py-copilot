@@ -1,11 +1,15 @@
 # Architecture — Event-Driven Sleep Audio Pipeline
 
-> **Status:** Design baseline (Issue #2). This document is the **single source of
+> **Status:** **Core infrastructure implemented (Issue #3)**. Input/Output S3 buckets
+> and EventBridge rule are now live. This document is the **single source of
 > truth** for the system design. All future issues and pull requests must keep
 > their implementation consistent with this file and update it when the design
-> evolves. No CDK stack code is implemented yet — implementation begins in the
-> next issue ("[3] TDD: Core S3 Buckets + EventBridge Rule") following the
-> Test-Driven Development workflow described in [`AGENT_GUIDELINES.md`](./AGENT_GUIDELINES.md).
+> evolves.
+> 
+> **Implementation Progress:**
+> - ✅ Issue #2: Design baseline established
+> - ✅ Issue #3: Core S3 Buckets + EventBridge Rule (completed)
+> - 🔜 Issue #4: Step Functions State Machine Skeleton + Polly Integration (next)
 
 ---
 
@@ -97,43 +101,48 @@ The end-to-end flow of a single audio file through the pipeline:
 
 ## 4. Architecture Diagram
 
+**Legend:**
+- ✅ = Implemented (Issue #3)
+- 🔜 = Planned (Issue #4+)
+
 ```mermaid
 flowchart TD
     user([User / Client App])
 
-    subgraph ingestion["Ingestion"]
-        input[("Input S3 Bucket\nprivate · encrypted")]
-        eb{{"EventBridge Rule\nObject Created"}}
+    subgraph ingestion["✅ Ingestion (Implemented)"]
+        input[("✅ Input S3 Bucket\nSleepAudioInputBucket\nprivate · encrypted · versioned")]
+        eb{{"✅ EventBridge Rule\nSleepAudioProcessingRule\nObject Created"}}
     end
 
-    subgraph processing["Processing — AWS Step Functions"]
-        validate["Validate &amp; Extract Metadata\n(Lambda)"]
-        polly["Amazon Polly\nText-to-Speech"]
-        bedrock["Amazon Bedrock\nAI Soundscapes (optional)"]
-        persist["Persist Processed Audio\n(Lambda)"]
+    subgraph processing["🔜 Processing — AWS Step Functions (Planned)"]
+        validate["🔜 Validate &amp; Extract Metadata\n(Lambda)"]
+        polly["🔜 Amazon Polly\nText-to-Speech"]
+        bedrock["🔜 Amazon Bedrock\nAI Soundscapes (optional)"]
+        persist["🔜 Persist Processed Audio\n(Lambda)"]
     end
 
     subgraph storage["Storage &amp; State"]
-        output[("Output S3 Bucket\nversioning enabled")]
-        ddb[("DynamoDB\nmetadata &amp; status")]
+        output[("✅ Output S3 Bucket\nSleepAudioOutputBucket\nprivate · encrypted · versioned")]
+        ddb[("🔜 DynamoDB\nmetadata &amp; status")]
     end
 
-    subgraph notify_obs["Notifications &amp; Observability"]
-        sns(["SNS Topic\ncompletion / error"])
-        cw["CloudWatch\nLogs · Metrics · Alarms"]
+    subgraph notify_obs["🔜 Notifications &amp; Observability (Planned)"]
+        sns(["🔜 SNS Topic\ncompletion / error"])
+        cw["✅ CloudWatch\nLogs (placeholder target)"]
     end
 
     user -->|1. upload raw audio| input
     input -->|2. Object Created event| eb
-    eb -->|3. start execution| validate
-    validate -->|4. status = PROCESSING| ddb
-    validate -->|5a. synthesize voice| polly
-    validate -->|5b. enhance / generate| bedrock
-    polly --> persist
-    bedrock --> persist
-    persist -->|6. write processed file| output
-    persist -->|7. status = COMPLETED / FAILED| ddb
-    persist -->|8. publish result| sns
+    eb -->|3. log event (temporary)| cw
+    eb -.->|"3. start execution (Issue #4)"| validate
+    validate -.->|4. status = PROCESSING| ddb
+    validate -.->|5a. synthesize voice| polly
+    validate -.->|5b. enhance / generate| bedrock
+    polly -.-> persist
+    bedrock -.-> persist
+    persist -.->|6. write processed file| output
+    persist -.->|7. status = COMPLETED / FAILED| ddb
+    persist -.->|8. publish result| sns
     sns -.->|notify subscribers| user
 
     validate -.->|logs &amp; metrics| cw
@@ -141,7 +150,18 @@ flowchart TD
     bedrock -.->|logs &amp; metrics| cw
     persist -.->|logs &amp; metrics| cw
     cw -.->|9. alarm on failure| sns
+    
+    style input fill:#90EE90
+    style output fill:#90EE90
+    style eb fill:#90EE90
+    style cw fill:#90EE90
 ```
+
+**Current Implementation (Issue #3):**
+- ✅ Input and Output S3 buckets are created with encryption, versioning, and public access blocking
+- ✅ EventBridge rule is configured to trigger on S3 Object Created events
+- ✅ CloudWatch Logs serves as a temporary placeholder target for the EventBridge rule
+- 🔜 Step Functions state machine will replace the CloudWatch Logs target in Issue #4
 
 ---
 
@@ -219,3 +239,51 @@ Each environment synthesizes an isolated stack so changes can be promoted
   analytics for processed-audio discovery.
 - **API layer** — A future API Gateway + Lambda front end can issue pre-signed
   upload URLs and expose processing status from DynamoDB.
+
+---
+
+## 10. Implementation Status
+
+### Issue #3: Core S3 Buckets + EventBridge Rule (✅ Completed)
+
+**Implemented Resources:**
+
+1. **SleepAudioInputBucket** (Input S3 Bucket)
+   - Encryption: S3-managed (SSE-S3)
+   - Versioning: Enabled
+   - Public Access: Fully blocked (BLOCK_ALL)
+   - EventBridge: Enabled for Object Created notifications
+   - Removal Policy: DESTROY (dev/test) — should be RETAIN in production
+   - Auto-delete objects: Enabled (dev/test) — should be disabled in production
+
+2. **SleepAudioOutputBucket** (Output S3 Bucket)
+   - Encryption: S3-managed (SSE-S3)
+   - Versioning: Enabled
+   - Public Access: Fully blocked (BLOCK_ALL)
+   - Removal Policy: DESTROY (dev/test) — should be RETAIN in production
+   - Auto-delete objects: Enabled (dev/test) — should be disabled in production
+
+3. **SleepAudioProcessingRule** (EventBridge Rule)
+   - Event Pattern: Triggers on `Object Created` events from Input Bucket
+   - State: ENABLED
+   - Target: CloudWatch Logs (placeholder — will be replaced with Step Functions in Issue #4)
+   - Description: "Triggers processing workflow when audio is uploaded to input bucket"
+
+**Security Features:**
+- Both buckets use S3-managed encryption (SSE-S3) by default
+- Both buckets block all public access via `PublicAccessBlockConfiguration`
+- Input bucket has EventBridge notifications enabled for event-driven processing
+- IAM roles follow least-privilege principles (managed by CDK)
+
+**Test Coverage:**
+- ✅ Input bucket encryption verification
+- ✅ Input bucket versioning verification
+- ✅ Input bucket public access blocking verification
+- ✅ Output bucket existence and count verification
+- ✅ EventBridge rule event pattern verification
+- ✅ EventBridge rule target configuration verification
+
+**Next Steps (Issue #4):**
+- Replace CloudWatch Logs target with AWS Step Functions state machine
+- Add validation Lambda function
+- Integrate Amazon Polly for text-to-speech
