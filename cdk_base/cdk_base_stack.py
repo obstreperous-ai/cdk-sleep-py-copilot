@@ -4,6 +4,9 @@ from aws_cdk import (
     aws_events as events,
     aws_events_targets as targets,
     aws_logs as logs,
+    aws_stepfunctions as sfn,
+    aws_stepfunctions_tasks as tasks,
+    aws_iam as iam,
     RemovalPolicy,
 )
 from constructs import Construct
@@ -37,11 +40,41 @@ class CdkBaseStack(Stack):
             auto_delete_objects=True,  # For dev/test - should be False in prod
         )
 
-        # CloudWatch Log Group for EventBridge rule logging (placeholder target)
-        log_group = logs.LogGroup(
+        # CloudWatch Log Group for Step Functions state machine logging
+        state_machine_log_group = logs.LogGroup(
             self,
-            "ProcessingRuleLogGroup",
+            "StateMachineLogGroup",
             removal_policy=RemovalPolicy.DESTROY,
+        )
+
+        # Step Functions State Machine - Sleep Audio Pipeline
+        # Define the Polly task using CallAwsService for minimal integration
+        polly_task = tasks.CallAwsService(
+            self,
+            "InvokePolly",
+            service="polly",
+            action="synthesizeSpeech",
+            parameters={
+                "Text": sfn.JsonPath.string_at("$.text"),
+                "VoiceId": "Joanna",
+                "OutputFormat": "mp3",
+                "Engine": "neural"
+            },
+            iam_resources=["*"],  # Will be scoped down in production
+            result_path="$.pollyResult"
+        )
+
+        # Define the state machine
+        self.state_machine = sfn.StateMachine(
+            self,
+            "SleepAudioPipelineStateMachine",
+            definition=polly_task,
+            logs=sfn.LogOptions(
+                destination=state_machine_log_group,
+                level=sfn.LogLevel.ALL,
+                include_execution_data=True
+            ),
+            tracing_enabled=True,
         )
 
         # EventBridge Rule - triggers on S3 Object Created events from Input Bucket
@@ -61,8 +94,10 @@ class CdkBaseStack(Stack):
             enabled=True,
         )
 
-        # Add CloudWatch Logs as a placeholder target
-        # This will be replaced with Step Functions in Issue #4
+        # Add Step Functions state machine as target
         self.processing_rule.add_target(
-            targets.CloudWatchLogGroup(log_group)
+            targets.SfnStateMachine(
+                self.state_machine,
+                input=events.RuleTargetInput.from_event_path("$")
+            )
         )
