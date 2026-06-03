@@ -1,15 +1,16 @@
 # Architecture — Event-Driven Sleep Audio Pipeline
 
-> **Status:** **Core infrastructure implemented (Issue #3)**. Input/Output S3 buckets
-> and EventBridge rule are now live. This document is the **single source of
-> truth** for the system design. All future issues and pull requests must keep
-> their implementation consistent with this file and update it when the design
-> evolves.
+> **Status:** **Step Functions orchestration implemented (Issue #4)**. Input/Output S3 buckets,
+> EventBridge rule, and Step Functions state machine with Polly integration are now live.
+> This document is the **single source of truth** for the system design. All future issues
+> and pull requests must keep their implementation consistent with this file and update it
+> when the design evolves.
 > 
 > **Implementation Progress:**
 > - ✅ Issue #2: Design baseline established
 > - ✅ Issue #3: Core S3 Buckets + EventBridge Rule (completed)
-> - 🔜 Issue #4: Step Functions State Machine Skeleton + Polly Integration (next)
+> - ✅ Issue #4: Step Functions State Machine Skeleton + Polly Integration (completed)
+> - 🔜 Issue #5: DynamoDB Metadata Table + State Machine Input/Output Handling (next)
 
 ---
 
@@ -102,8 +103,8 @@ The end-to-end flow of a single audio file through the pipeline:
 ## 4. Architecture Diagram
 
 **Legend:**
-- ✅ = Implemented (Issue #3)
-- 🔜 = Planned (Issue #4+)
+- ✅ = Implemented (Issue #3-4)
+- 🔜 = Planned (Issue #5+)
 
 ```mermaid
 flowchart TD
@@ -114,9 +115,10 @@ flowchart TD
         eb{{"✅ EventBridge Rule\nSleepAudioProcessingRule\nObject Created"}}
     end
 
-    subgraph processing["🔜 Processing — AWS Step Functions (Planned)"]
+    subgraph processing["✅ Processing — AWS Step Functions (Skeleton Implemented)"]
+        sfn["✅ Step Functions\nSleepAudioPipelineStateMachine"]
         validate["🔜 Validate &amp; Extract Metadata\n(Lambda)"]
-        polly["🔜 Amazon Polly\nText-to-Speech"]
+        polly["✅ Amazon Polly Task\nSynthesizeSpeech (skeleton)"]
         bedrock["🔜 Amazon Bedrock\nAI Soundscapes (optional)"]
         persist["🔜 Persist Processed Audio\n(Lambda)"]
     end
@@ -126,42 +128,46 @@ flowchart TD
         ddb[("🔜 DynamoDB\nmetadata &amp; status")]
     end
 
-    subgraph notify_obs["🔜 Notifications &amp; Observability (Planned)"]
+    subgraph notify_obs["🔜 Notifications &amp; Observability"]
         sns(["🔜 SNS Topic\ncompletion / error"])
-        cw["✅ CloudWatch\nLogs (placeholder target)"]
+        cw["✅ CloudWatch Logs\nStep Functions logging"]
     end
 
     user -->|1. upload raw audio| input
     input -->|2. Object Created event| eb
-    eb -->|3. log event (temporary)| cw
-    eb -.->|"3. start execution (Issue #4)"| validate
-    validate -.->|4. status = PROCESSING| ddb
-    validate -.->|5a. synthesize voice| polly
-    validate -.->|5b. enhance / generate| bedrock
-    polly -.-> persist
+    eb -->|3. start execution| sfn
+    sfn --> polly
+    sfn -.->|CloudWatch Logs| cw
+    polly -.->|4. synthesize voice| validate
+    validate -.->|5. status = PROCESSING| ddb
+    validate -.->|6a. enhance / generate| bedrock
     bedrock -.-> persist
-    persist -.->|6. write processed file| output
-    persist -.->|7. status = COMPLETED / FAILED| ddb
-    persist -.->|8. publish result| sns
+    polly -.-> persist
+    persist -.->|7. write processed file| output
+    persist -.->|8. status = COMPLETED / FAILED| ddb
+    persist -.->|9. publish result| sns
     sns -.->|notify subscribers| user
 
     validate -.->|logs &amp; metrics| cw
-    polly -.->|logs &amp; metrics| cw
     bedrock -.->|logs &amp; metrics| cw
     persist -.->|logs &amp; metrics| cw
-    cw -.->|9. alarm on failure| sns
+    cw -.->|10. alarm on failure| sns
     
     style input fill:#90EE90
     style output fill:#90EE90
     style eb fill:#90EE90
+    style sfn fill:#90EE90
+    style polly fill:#90EE90
     style cw fill:#90EE90
 ```
 
-**Current Implementation (Issue #3):**
+**Current Implementation (Issue #3-4):**
 - ✅ Input and Output S3 buckets are created with encryption, versioning, and public access blocking
 - ✅ EventBridge rule is configured to trigger on S3 Object Created events
-- ✅ CloudWatch Logs serves as a temporary placeholder target for the EventBridge rule
-- 🔜 Step Functions state machine will replace the CloudWatch Logs target in Issue #4
+- ✅ Step Functions state machine is the target of the EventBridge rule
+- ✅ Step Functions state machine includes a skeleton Polly task using CallAwsService
+- ✅ CloudWatch Logs enabled for Step Functions with full execution data logging
+- 🔜 Full validation, processing, and persistence logic will be added in Issue #5+
 
 ---
 
@@ -283,7 +289,51 @@ Each environment synthesizes an isolated stack so changes can be promoted
 - ✅ EventBridge rule event pattern verification
 - ✅ EventBridge rule target configuration verification
 
-**Next Steps (Issue #4):**
-- Replace CloudWatch Logs target with AWS Step Functions state machine
+---
+
+### Issue #4: Step Functions State Machine Skeleton + Polly Integration (✅ Completed)
+
+**Implemented Resources:**
+
+1. **SleepAudioPipelineStateMachine** (Step Functions State Machine)
+   - Definition: Single-state skeleton with Polly integration using `CallAwsService`
+   - Task: InvokePolly — calls Amazon Polly's `synthesizeSpeech` API
+   - Parameters: Placeholder text, VoiceId (Joanna), OutputFormat (mp3), Engine (neural)
+   - CloudWatch Logging: ALL level with execution data included
+   - Tracing: AWS X-Ray tracing enabled
+   - Execution Role: Auto-generated with least-privilege permissions (Polly:SynthesizeSpeech)
+
+2. **StateMachineLogGroup** (CloudWatch Log Group)
+   - Purpose: Centralized logging for Step Functions executions
+   - Removal Policy: DESTROY (dev/test)
+   - Log Level: ALL with execution data
+
+3. **EventBridge Rule Target Update**
+   - Previous: CloudWatch Logs (placeholder)
+   - Current: Step Functions state machine
+   - Input: Full event payload passed from S3 Object Created event
+   - Role: Auto-generated IAM role for EventBridge to invoke Step Functions
+
+**Security Features:**
+- State machine execution role follows least-privilege principles (only Polly actions)
+- EventBridge has dedicated IAM role to start executions
+- All permissions are scoped to specific resources where possible
+- CloudWatch logging enables full audit trail of executions
+
+**Test Coverage:**
+- ✅ Step Functions state machine resource exists
+- ✅ State machine has CloudWatch logging enabled with execution data
+- ✅ State machine definition contains expected properties
+- ✅ EventBridge rule targets Step Functions (not CloudWatch Logs)
+- ✅ State machine has proper execution IAM role
+
+**Architecture Updates:**
+- ✅ Mermaid diagram updated to show Step Functions orchestration layer
+- ✅ EventBridge → Step Functions integration shown
+- ✅ Polly task highlighted as implemented skeleton
+- ✅ CloudWatch Logs role clarified (Step Functions logging, not EventBridge target)
+
+**Next Steps (Issue #5):**
+- Add DynamoDB table for metadata and processing status
+- Implement input/output transformation in state machine
 - Add validation Lambda function
-- Integrate Amazon Polly for text-to-speech
