@@ -136,13 +136,13 @@ flowchart TD
     user -->|1. upload raw audio| input
     input -->|2. Object Created event| eb
     eb -->|3. start execution| sfn
-    sfn --> polly
+    sfn -->|invoke| polly
     sfn -.->|CloudWatch Logs| cw
-    polly -.->|4. synthesize voice| validate
+    
+    polly -.->|4. (future) pass to validate| validate
     validate -.->|5. status = PROCESSING| ddb
     validate -.->|6a. enhance / generate| bedrock
     bedrock -.-> persist
-    polly -.-> persist
     persist -.->|7. write processed file| output
     persist -.->|8. status = COMPLETED / FAILED| ddb
     persist -.->|9. publish result| sns

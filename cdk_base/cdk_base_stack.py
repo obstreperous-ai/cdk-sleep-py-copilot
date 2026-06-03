@@ -63,9 +63,9 @@ class CdkBaseStack(Stack):
                 "Engine": "neural"
             },
             iam_resources=[
-                # Scope permissions to only what's needed for synthesizeSpeech
-                # No custom lexicons or other resources needed for basic synthesis
-                f"arn:aws:polly:*:{self.account}:*"
+                # SynthesizeSpeech doesn't operate on specific resources
+                # Scoped to account-level Polly access only
+                f"arn:aws:polly:{self.region}:{self.account}:lexicon/*"
             ],
             result_path="$.pollyResult"
         )
