@@ -68,7 +68,7 @@ class CdkBaseStack(Stack):
         self.state_machine = sfn.StateMachine(
             self,
             "SleepAudioPipelineStateMachine",
-            definition=polly_task,
+            definition_body=sfn.DefinitionBody.from_chainable(polly_task),
             logs=sfn.LogOptions(
                 destination=state_machine_log_group,
                 level=sfn.LogLevel.ALL,
