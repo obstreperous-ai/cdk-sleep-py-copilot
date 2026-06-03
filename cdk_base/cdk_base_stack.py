@@ -49,18 +49,24 @@ class CdkBaseStack(Stack):
 
         # Step Functions State Machine - Sleep Audio Pipeline
         # Define the Polly task using CallAwsService for minimal integration
+        # Note: This is a skeleton implementation. The actual text input will be provided
+        # after validation and processing steps are added in Issue #5.
         polly_task = tasks.CallAwsService(
             self,
             "InvokePolly",
             service="polly",
             action="synthesizeSpeech",
             parameters={
-                "Text": sfn.JsonPath.string_at("$.text"),
+                "Text": "Placeholder text for skeleton implementation",
                 "VoiceId": "Joanna",
                 "OutputFormat": "mp3",
                 "Engine": "neural"
             },
-            iam_resources=["*"],  # Will be scoped down in production
+            iam_resources=[
+                # Scope permissions to only what's needed for synthesizeSpeech
+                # No custom lexicons or other resources needed for basic synthesis
+                f"arn:aws:polly:*:{self.account}:*"
+            ],
             result_path="$.pollyResult"
         )
 
