@@ -7,6 +7,7 @@ from aws_cdk import (
     aws_stepfunctions as sfn,
     aws_stepfunctions_tasks as tasks,
     aws_iam as iam,
+    aws_dynamodb as dynamodb,
     RemovalPolicy,
 )
 from constructs import Construct
@@ -40,6 +41,22 @@ class CdkBaseStack(Stack):
             auto_delete_objects=True,  # For dev/test - should be False in prod
         )
 
+        # DynamoDB Table - stores audio pipeline metadata
+        self.metadata_table = dynamodb.Table(
+            self,
+            "SleepAudioMetadataTable",
+            partition_key=dynamodb.Attribute(
+                name="audioId",
+                type=dynamodb.AttributeType.STRING
+            ),
+            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+            encryption=dynamodb.TableEncryption.AWS_MANAGED,
+            point_in_time_recovery_specification=dynamodb.PointInTimeRecoverySpecification(
+                point_in_time_recovery_enabled=True
+            ),
+            removal_policy=RemovalPolicy.DESTROY,  # For dev/test - should be RETAIN in prod
+        )
+
         # CloudWatch Log Group for Step Functions state machine logging
         state_machine_log_group = logs.LogGroup(
             self,
@@ -48,9 +65,35 @@ class CdkBaseStack(Stack):
         )
 
         # Step Functions State Machine - Sleep Audio Pipeline
-        # Define the Polly task using CallAwsService for minimal integration
+        # Task 1: Write initial metadata to DynamoDB
+        write_metadata_task = tasks.DynamoPutItem(
+            self,
+            "WriteInitialMetadata",
+            table=self.metadata_table,
+            item={
+                "audioId": tasks.DynamoAttributeValue.from_string(
+                    sfn.JsonPath.string_at("$.detail.object.key")
+                ),
+                "status": tasks.DynamoAttributeValue.from_string("PROCESSING"),
+                "inputBucket": tasks.DynamoAttributeValue.from_string(
+                    sfn.JsonPath.string_at("$.detail.bucket.name")
+                ),
+                "inputKey": tasks.DynamoAttributeValue.from_string(
+                    sfn.JsonPath.string_at("$.detail.object.key")
+                ),
+                "createdAt": tasks.DynamoAttributeValue.from_string(
+                    sfn.JsonPath.string_at("$$.Execution.StartTime")
+                ),
+                "updatedAt": tasks.DynamoAttributeValue.from_string(
+                    sfn.JsonPath.string_at("$$.Execution.StartTime")
+                ),
+            },
+            result_path="$.metadata"
+        )
+
+        # Task 2: Invoke Polly for text-to-speech (skeleton from Issue #4)
         # Note: This is a skeleton implementation. The actual text input will be provided
-        # after validation and processing steps are added in Issue #5.
+        # after validation and processing steps are added in future issues.
         polly_task = tasks.CallAwsService(
             self,
             "InvokePolly",
@@ -70,11 +113,14 @@ class CdkBaseStack(Stack):
             result_path="$.pollyResult"
         )
 
+        # Chain the tasks together: DynamoDB write -> Polly
+        definition = write_metadata_task.next(polly_task)
+
         # Define the state machine
         self.state_machine = sfn.StateMachine(
             self,
             "SleepAudioPipelineStateMachine",
-            definition_body=sfn.DefinitionBody.from_chainable(polly_task),
+            definition_body=sfn.DefinitionBody.from_chainable(definition),
             logs=sfn.LogOptions(
                 destination=state_machine_log_group,
                 level=sfn.LogLevel.ALL,

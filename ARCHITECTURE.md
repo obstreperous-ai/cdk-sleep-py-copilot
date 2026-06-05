@@ -1,7 +1,8 @@
 # Architecture — Event-Driven Sleep Audio Pipeline
 
-> **Status:** **Step Functions orchestration implemented (Issue #4)**. Input/Output S3 buckets,
-> EventBridge rule, and Step Functions state machine with Polly integration are now live.
+> **Status:** **DynamoDB metadata layer implemented (Issue #5)**. Input/Output S3 buckets,
+> EventBridge rule, Step Functions state machine with Polly integration, and DynamoDB metadata
+> table are now live. State machine captures S3 event data and writes initial processing records.
 > This document is the **single source of truth** for the system design. All future issues
 > and pull requests must keep their implementation consistent with this file and update it
 > when the design evolves.
@@ -10,7 +11,8 @@
 > - ✅ Issue #2: Design baseline established
 > - ✅ Issue #3: Core S3 Buckets + EventBridge Rule (completed)
 > - ✅ Issue #4: Step Functions State Machine Skeleton + Polly Integration (completed)
-> - 🔜 Issue #5: DynamoDB Metadata Table + State Machine Input/Output Handling (next)
+> - ✅ Issue #5: DynamoDB Metadata Table + State Machine Input/Output Handling (completed)
+> - 🔜 Issue #6: SNS Notifications + Basic Error Handling &amp; Status Updates (next)
 
 ---
 
@@ -103,8 +105,8 @@ The end-to-end flow of a single audio file through the pipeline:
 ## 4. Architecture Diagram
 
 **Legend:**
-- ✅ = Implemented (Issue #3-4)
-- 🔜 = Planned (Issue #5+)
+- ✅ = Implemented (Issue #3-5)
+- 🔜 = Planned (Issue #6+)
 
 ```mermaid
 flowchart TD
@@ -115,8 +117,9 @@ flowchart TD
         eb{{"✅ EventBridge Rule\nSleepAudioProcessingRule\nObject Created"}}
     end
 
-    subgraph processing["✅ Processing — AWS Step Functions (Skeleton Implemented)"]
+    subgraph processing["✅ Processing — AWS Step Functions (Skeleton + DynamoDB)"]
         sfn["✅ Step Functions\nSleepAudioPipelineStateMachine"]
+        write_metadata["✅ Write Initial Metadata\nDynamoDB PutItem"]
         validate["🔜 Validate &amp; Extract Metadata\n(Lambda)"]
         polly["✅ Amazon Polly Task\nSynthesizeSpeech (skeleton)"]
         bedrock["🔜 Amazon Bedrock\nAI Soundscapes (optional)"]
@@ -125,7 +128,7 @@ flowchart TD
 
     subgraph storage["Storage &amp; State"]
         output[("✅ Output S3 Bucket\nSleepAudioOutputBucket\nprivate · encrypted · versioned")]
-        ddb[("🔜 DynamoDB\nmetadata &amp; status")]
+        ddb[("✅ DynamoDB\nSleepAudioMetadataTable\naudioId · status · metadata")]
     end
 
     subgraph notify_obs["🔜 Notifications &amp; Observability"]
@@ -136,11 +139,12 @@ flowchart TD
     user -->|1. upload raw audio| input
     input -->|2. Object Created event| eb
     eb -->|3. start execution| sfn
-    sfn -->|invoke| polly
+    sfn -->|4a. write initial record| write_metadata
+    write_metadata -->|status=PROCESSING| ddb
+    sfn -->|4b. invoke| polly
     sfn -.->|CloudWatch Logs| cw
     
-    polly -.->|4. (future) pass to validate| validate
-    validate -.->|5. status = PROCESSING| ddb
+    polly -.->|5. (future) pass to validate| validate
     validate -.->|6a. enhance / generate| bedrock
     bedrock -.-> persist
     persist -.->|7. write processed file| output
@@ -159,15 +163,21 @@ flowchart TD
     style sfn fill:#90EE90
     style polly fill:#90EE90
     style cw fill:#90EE90
+    style ddb fill:#90EE90
+    style write_metadata fill:#90EE90
+    style cw fill:#90EE90
 ```
 
-**Current Implementation (Issue #3-4):**
+**Current Implementation (Issue #3-5):**
 - ✅ Input and Output S3 buckets are created with encryption, versioning, and public access blocking
 - ✅ EventBridge rule is configured to trigger on S3 Object Created events
 - ✅ Step Functions state machine is the target of the EventBridge rule
+- ✅ Step Functions state machine includes a DynamoDB PutItem task to write initial metadata
+- ✅ DynamoDB table (SleepAudioMetadataTable) stores processing metadata and status
+- ✅ State machine captures S3 event data (bucket, key) and writes to DynamoDB with status=PROCESSING
 - ✅ Step Functions state machine includes a skeleton Polly task using CallAwsService
 - ✅ CloudWatch Logs enabled for Step Functions with full execution data logging
-- 🔜 Full validation, processing, and persistence logic will be added in Issue #5+
+- 🔜 Full validation, processing, and persistence logic will be added in Issue #6+
 
 ---
 
@@ -337,3 +347,80 @@ Each environment synthesizes an isolated stack so changes can be promoted
 - Add DynamoDB table for metadata and processing status
 - Implement input/output transformation in state machine
 - Add validation Lambda function
+
+---
+
+### Issue #5: DynamoDB Metadata Table + State Machine Input/Output Handling (✅ Completed)
+
+**Implemented Resources:**
+
+1. **SleepAudioMetadataTable** (DynamoDB Table)
+   - Partition Key: `audioId` (String) — derived from S3 object key
+   - Billing Mode: PAY_PER_REQUEST (on-demand) for dev/test
+   - Encryption: AWS-managed (SSE-DynamoDB)
+   - Point-in-Time Recovery: Enabled for data protection
+   - Removal Policy: DESTROY (dev/test) — should be RETAIN in production
+
+2. **WriteInitialMetadata Task** (Step Functions DynamoDB PutItem)
+   - First task in state machine workflow
+   - Captures S3 event data from EventBridge input:
+     - `audioId`: Object key from `$.detail.object.key`
+     - `inputBucket`: Bucket name from `$.detail.bucket.name`
+     - `inputKey`: Object key from `$.detail.object.key`
+     - `status`: Initial value set to "PROCESSING"
+     - `createdAt`: Execution start time from `$$.Execution.StartTime`
+     - `updatedAt`: Execution start time from `$$.Execution.StartTime`
+   - Result stored in `$.metadata` path for downstream tasks
+
+3. **State Machine Chain Update**
+   - Previous: Single Polly task
+   - Current: DynamoDB PutItem → Polly task
+   - Flow: S3 event → Write metadata → Invoke Polly (skeleton)
+   - State machine role automatically granted `dynamodb:PutItem` permission
+
+**Metadata Schema:**
+
+| Attribute | Type | Description |
+| --- | --- | --- |
+| `audioId` | String (PK) | S3 object key, uniquely identifies the audio processing job |
+| `status` | String | Current processing status: PROCESSING, COMPLETED, FAILED |
+| `inputBucket` | String | Source S3 bucket name |
+| `inputKey` | String | Source S3 object key |
+| `createdAt` | String (ISO 8601) | State machine execution start timestamp |
+| `updatedAt` | String (ISO 8601) | Last update timestamp |
+
+*Note: Future attributes (e.g., `outputBucket`, `outputKey`, `duration`, `errorMessage`) will be added in subsequent issues.*
+
+**Security Features:**
+- DynamoDB table uses AWS-managed encryption (SSE-DynamoDB)
+- Point-in-time recovery enabled for data protection and backup
+- State machine execution role follows least-privilege principles (only `dynamodb:PutItem` on specific table)
+- All permissions are scoped to specific resources via CDK-generated policies
+
+**Test Coverage:**
+- ✅ DynamoDB table resource existence verification
+- ✅ Table partition key schema (audioId) verification
+- ✅ Table encryption enabled verification
+- ✅ On-demand billing mode verification
+- ✅ Point-in-time recovery enabled verification
+- ✅ State machine definition includes DynamoDB task verification
+- ✅ State machine role has DynamoDB permissions verification
+- ✅ State machine chain includes multiple tasks verification
+
+**Architecture Updates:**
+- ✅ Mermaid diagram updated to show DynamoDB table and write_metadata task
+- ✅ State machine flow updated: EventBridge → DynamoDB write → Polly
+- ✅ DynamoDB table highlighted as implemented with metadata schema
+- ✅ Metadata attributes documented in implementation section
+
+**Input/Output Handling:**
+- ✅ S3 event data (bucket name, object key) mapped into state machine input
+- ✅ EventBridge passes full event payload using `RuleTargetInput.from_event_path("$")`
+- ✅ State machine uses JsonPath expressions to extract fields from event
+- ✅ DynamoDB PutItem captures event context and execution metadata
+
+**Next Steps (Issue #6):**
+- Add SNS topic for completion/error notifications
+- Implement basic error handling in state machine (Catch/Retry)
+- Update DynamoDB status on completion/failure
+- Add CloudWatch alarms for Step Functions execution failures
