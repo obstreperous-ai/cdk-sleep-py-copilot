@@ -10,6 +10,7 @@ from aws_cdk import (
     aws_dynamodb as dynamodb,
     aws_sns as sns,
     aws_kms as kms,
+    aws_lambda as lambda_,
     RemovalPolicy,
 )
 from constructs import Construct
@@ -85,6 +86,22 @@ class CdkBaseStack(Stack):
             master_key=sns_encryption_key,
         )
 
+        # Lambda Function - Audio Processor (skeleton for future audio processing)
+        self.audio_processor_function = lambda_.Function(
+            self,
+            "SleepAudioProcessor",
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            handler="audio_processor.handler",
+            code=lambda_.Code.from_asset("lambda"),
+            environment={
+                "METADATA_TABLE_NAME": self.metadata_table.table_name
+            },
+            description="Processes audio files - validates, extracts metadata, and enriches data",
+        )
+
+        # Grant Lambda read permissions to DynamoDB table (for future metadata operations)
+        self.metadata_table.grant_read_data(self.audio_processor_function)
+
         # CloudWatch Log Group for Step Functions state machine logging
         state_machine_log_group = logs.LogGroup(
             self,
@@ -119,7 +136,22 @@ class CdkBaseStack(Stack):
             result_path="$.metadata"
         )
 
-        # Task 2: Invoke Polly for text-to-speech (skeleton from Issue #4)
+        # Task 2: Invoke Lambda for audio processing/validation
+        invoke_audio_processor = tasks.LambdaInvoke(
+            self,
+            "InvokeAudioProcessor",
+            lambda_function=self.audio_processor_function,
+            # Pass the entire event payload to the Lambda
+            payload=sfn.TaskInput.from_object({
+                "detail": sfn.JsonPath.object_at("$.detail"),
+                "metadata": sfn.JsonPath.object_at("$.metadata")
+            }),
+            result_path="$.processorResult",
+            # Extract the Payload from Lambda's response
+            output_path="$"
+        )
+
+        # Task 3: Invoke Polly for text-to-speech (skeleton from Issue #4)
         # Note: This is a skeleton implementation. The actual text input will be provided
         # after validation and processing steps are added in future issues.
         polly_task = tasks.CallAwsService(
@@ -141,7 +173,7 @@ class CdkBaseStack(Stack):
             result_path="$.pollyResult"
         )
 
-        # Task 3: Update DynamoDB status to COMPLETED on success
+        # Task 4: Update DynamoDB status to COMPLETED on success
         update_completed_status = tasks.DynamoUpdateItem(
             self,
             "UpdateStatusCompleted",
@@ -165,7 +197,7 @@ class CdkBaseStack(Stack):
             result_path="$.statusUpdate"
         )
 
-        # Task 4: Publish success notification to SNS
+        # Task 5: Publish success notification to SNS
         publish_success_notification = tasks.SnsPublish(
             self,
             "PublishSuccessNotification",
@@ -180,7 +212,7 @@ class CdkBaseStack(Stack):
             result_path="$.notification"
         )
 
-        # Task 5: Update DynamoDB status to FAILED on error
+        # Task 6: Update DynamoDB status to FAILED on error
         update_failed_status = tasks.DynamoUpdateItem(
             self,
             "UpdateStatusFailed",
@@ -208,7 +240,7 @@ class CdkBaseStack(Stack):
             result_path="$.statusUpdate"
         )
 
-        # Task 6: Publish failure notification to SNS
+        # Task 7: Publish failure notification to SNS
         publish_failure_notification = tasks.SnsPublish(
             self,
             "PublishFailureNotification",
@@ -224,8 +256,8 @@ class CdkBaseStack(Stack):
             result_path="$.notification"
         )
 
-        # Success path: Polly -> Update Status -> Notify Success
-        success_chain = polly_task.next(update_completed_status).next(publish_success_notification)
+        # Success path: Lambda -> Polly -> Update Status -> Notify Success
+        success_chain = invoke_audio_processor.next(polly_task).next(update_completed_status).next(publish_success_notification)
 
         # Failure path: Update Status -> Notify Failure
         failure_chain = update_failed_status.next(publish_failure_notification)
@@ -233,6 +265,12 @@ class CdkBaseStack(Stack):
         # Add error handling to the main workflow
         # Catch errors from any task and route to failure path
         write_metadata_task.add_catch(
+            failure_chain,
+            errors=["States.ALL"],
+            result_path="$.error"
+        )
+
+        invoke_audio_processor.add_catch(
             failure_chain,
             errors=["States.ALL"],
             result_path="$.error"
@@ -256,7 +294,7 @@ class CdkBaseStack(Stack):
             result_path="$.error"
         )
 
-        # Chain the tasks together: DynamoDB write -> Polly -> Success Path
+        # Chain the tasks together: DynamoDB write -> Lambda -> Polly -> Success Path
         definition = write_metadata_task.next(success_chain)
 
         # Define the state machine

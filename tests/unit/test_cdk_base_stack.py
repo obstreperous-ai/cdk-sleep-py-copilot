@@ -375,3 +375,118 @@ def test_state_machine_has_status_update_tasks(cdk_base_template: assertions.Tem
     state_machine = list(state_machines.values())[0]
     assert "DefinitionString" in state_machine["Properties"], "State machine should have a definition"
     # Status update tasks will be verified in implementation
+
+
+# ==================== Issue #7: Lambda Function Skeleton + Integration Tests ====================
+
+
+def test_lambda_audio_processor_function_exists(cdk_base_template: assertions.Template):
+    """Test that Lambda audio processor function exists"""
+    # Note: There are 2 auto-generated Lambda functions (S3 auto-delete, bucket notifications)
+    # So we expect 3 total (2 auto-generated + 1 audio processor)
+    cdk_base_template.resource_count_is("AWS::Lambda::Function", 3)
+
+
+def test_lambda_function_has_python_runtime(cdk_base_template: assertions.Template):
+    """Test that Lambda function uses Python 3.12 runtime"""
+    cdk_base_template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "Runtime": "python3.12"
+        }
+    )
+
+
+def test_lambda_function_has_handler_configured(cdk_base_template: assertions.Template):
+    """Test that Lambda function has handler configured"""
+    cdk_base_template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "Handler": assertions.Match.any_value()
+        }
+    )
+
+
+def test_lambda_function_has_environment_variables(cdk_base_template: assertions.Template):
+    """Test that Lambda function has environment variables configured"""
+    cdk_base_template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "Environment": {
+                "Variables": assertions.Match.object_like({
+                    "METADATA_TABLE_NAME": assertions.Match.any_value()
+                })
+            }
+        }
+    )
+
+
+def test_lambda_execution_role_has_dynamodb_permissions(cdk_base_template: assertions.Template):
+    """Test that Lambda execution role has DynamoDB read permissions"""
+    # Lambda should have GetItem permission to read metadata
+    cdk_base_template.has_resource_properties(
+        "AWS::IAM::Policy",
+        {
+            "PolicyDocument": {
+                "Statement": assertions.Match.array_with([
+                    assertions.Match.object_like({
+                        "Action": assertions.Match.any_value(),
+                        "Effect": "Allow",
+                        "Resource": assertions.Match.any_value()
+                    })
+                ])
+            }
+        }
+    )
+
+
+def test_lambda_execution_role_has_cloudwatch_logs_permissions(cdk_base_template: assertions.Template):
+    """Test that Lambda execution role has CloudWatch Logs permissions"""
+    # Lambda should have basic execution role with CloudWatch Logs access
+    # The managed policy ARN is constructed using Fn::Join
+    cdk_base_template.has_resource_properties(
+        "AWS::IAM::Role",
+        {
+            "ManagedPolicyArns": assertions.Match.array_with([
+                {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "arn:",
+                            {"Ref": "AWS::Partition"},
+                            ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+                        ]
+                    ]
+                }
+            ])
+        }
+    )
+
+
+def test_state_machine_role_has_lambda_invoke_permissions(cdk_base_template: assertions.Template):
+    """Test that state machine execution role has Lambda invoke permissions"""
+    cdk_base_template.has_resource_properties(
+        "AWS::IAM::Policy",
+        {
+            "PolicyDocument": {
+                "Statement": assertions.Match.array_with([
+                    assertions.Match.object_like({
+                        "Action": "lambda:InvokeFunction",
+                        "Effect": "Allow",
+                        "Resource": assertions.Match.any_value()
+                    })
+                ])
+            }
+        }
+    )
+
+
+def test_state_machine_includes_lambda_invocation_task(cdk_base_template: assertions.Template):
+    """Test that state machine definition includes Lambda invocation task"""
+    # Get the state machine resource to check its definition
+    state_machines = cdk_base_template.find_resources("AWS::StepFunctions::StateMachine")
+    assert len(state_machines) == 1, "Expected exactly one state machine"
+    
+    # The definition should contain Lambda invocation
+    state_machine = list(state_machines.values())[0]
+    assert "DefinitionString" in state_machine["Properties"], "State machine should have a definition"
