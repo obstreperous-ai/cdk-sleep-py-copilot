@@ -1,20 +1,23 @@
 """
 Sleep Audio Processor Lambda Function
 
-This is a minimal skeleton Lambda function that will serve as a placeholder
-for future audio processing, metadata enrichment, or validation logic.
+This Lambda function validates audio file uploads and performs basic processing.
 
-Currently, it:
-- Receives input from the Step Functions state machine (S3 event details, audioId)
-- Logs the input for debugging
-- Performs a simple action (could be extended to update DynamoDB status or validate input)
-- Returns a success response
+Validation checks:
+- Verifies required fields from S3 event (bucket, key)
+- Checks file extension for supported audio formats
+- Returns clear error paths for validation failures
+
+Currently supports:
+- Audio file format validation (mp3, wav, m4a, ogg, flac)
+- Required field validation
+- Error handling with appropriate error types
 
 Future enhancements might include:
-- Audio validation (format, size, duration checks)
+- Audio file size validation
+- Duration checks
 - Metadata extraction and enrichment
 - S3 object tagging or categorization
-- Integration with additional AWS services
 """
 
 import json
@@ -25,6 +28,60 @@ from typing import Any, Dict
 # Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+# Supported audio file extensions
+SUPPORTED_AUDIO_EXTENSIONS = {'.mp3', '.wav', '.m4a', '.ogg', '.flac'}
+
+
+class ValidationError(Exception):
+    """Custom exception for validation errors"""
+    pass
+
+
+def validate_input(event: Dict[str, Any]) -> tuple[str, str]:
+    """
+    Validate the input event and extract S3 details.
+    
+    Args:
+        event: The event data from Step Functions state machine
+        
+    Returns:
+        Tuple of (bucket_name, object_key)
+        
+    Raises:
+        ValidationError: If validation fails
+    """
+    # Check for required 'detail' field
+    if 'detail' not in event:
+        raise ValidationError("Missing required 'detail' field in event")
+    
+    detail = event['detail']
+    
+    # Validate bucket name
+    bucket_dict = detail.get('bucket', {})
+    bucket_name = bucket_dict.get('name', '').strip()
+    
+    if not bucket_name:
+        raise ValidationError("Missing or empty bucket name in event")
+    
+    # Validate object key
+    object_dict = detail.get('object', {})
+    object_key = object_dict.get('key', '').strip()
+    
+    if not object_key:
+        raise ValidationError("Missing or empty object key in event")
+    
+    # Validate file extension
+    file_extension = os.path.splitext(object_key)[1].lower()
+    
+    if file_extension not in SUPPORTED_AUDIO_EXTENSIONS:
+        supported_formats = ', '.join(sorted(SUPPORTED_AUDIO_EXTENSIONS))
+        raise ValidationError(
+            f"Unsupported audio format '{file_extension}'. "
+            f"Supported formats: {supported_formats}"
+        )
+    
+    return bucket_name, object_key
 
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -47,22 +104,20 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     logger.info(f"Metadata table: {metadata_table_name}")
     
     try:
-        # Extract S3 event details from the input
-        # The event structure comes from EventBridge S3 Object Created event
-        detail = event.get('detail', {})
-        bucket_name = detail.get('bucket', {}).get('name', 'unknown')
-        object_key = detail.get('object', {}).get('key', 'unknown')
+        # Validate input and extract S3 details
+        bucket_name, object_key = validate_input(event)
         
         logger.info(f"Processing audio file: s3://{bucket_name}/{object_key}")
+        logger.info("Input validation passed successfully")
         
         # Placeholder for future processing logic
         # This is where we would:
-        # - Validate the audio file (size, format, duration)
+        # - Validate the audio file (size, duration checks)
         # - Extract metadata (duration, codec, sample rate)
         # - Update DynamoDB with enriched metadata
         # - Perform any pre-processing checks
         
-        # For now, just return success with basic info
+        # Return success with basic info
         result = {
             'status': 'success',
             'message': 'Audio processor invoked successfully',
@@ -74,6 +129,17 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         logger.info(f"Processing completed successfully: {json.dumps(result)}")
         return result
+        
+    except ValidationError as e:
+        # Handle validation errors specifically
+        error_message = f"Validation error: {str(e)}"
+        logger.error(error_message)
+        
+        return {
+            'status': 'error',
+            'message': error_message,
+            'errorType': 'ValidationError'
+        }
         
     except Exception as e:
         # Log the error and return a failure response
