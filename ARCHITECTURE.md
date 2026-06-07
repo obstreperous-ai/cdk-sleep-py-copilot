@@ -1,9 +1,10 @@
 # Architecture — Event-Driven Sleep Audio Pipeline
 
-> **Status:** **SNS notifications and error handling implemented (Issue #6)**. Input/Output S3 buckets,
-> EventBridge rule, Step Functions state machine with Polly integration, DynamoDB metadata
+> **Status:** **Lambda function skeleton and integration implemented (Issue #7)**. Input/Output S3 buckets,
+> EventBridge rule, Step Functions state machine with Lambda processor, Polly integration, DynamoDB metadata
 > table, SNS topics for notifications, and state machine error handling are now live. State machine
-> captures S3 event data, writes initial processing records, handles errors, and publishes notifications.
+> workflow: S3 upload → EventBridge → DynamoDB write → Lambda processor → Polly → Status update → Notification.
+> Lambda function is a minimal skeleton for future audio validation, metadata extraction, and processing.
 > This document is the **single source of truth** for the system design. All future issues
 > and pull requests must keep their implementation consistent with this file and update it
 > when the design evolves.
@@ -14,7 +15,8 @@
 > - ✅ Issue #4: Step Functions State Machine Skeleton + Polly Integration (completed)
 > - ✅ Issue #5: DynamoDB Metadata Table + State Machine Input/Output Handling (completed)
 > - ✅ Issue #6: SNS Notifications + Basic Error Handling &amp; Status Updates (completed)
-> - 🔜 Issue #7: Basic Lambda Function Skeleton + Integration with State Machine (next)
+> - ✅ Issue #7: Basic Lambda Function Skeleton + Integration with State Machine (completed)
+> - 🔜 Issue #8: TDD: Complete Pipeline Wiring, Input Validation &amp; Basic End-to-End Flow (next)
 
 ---
 
@@ -122,10 +124,11 @@ flowchart TD
     subgraph processing["✅ Processing — AWS Step Functions (with Error Handling)"]
         sfn["✅ Step Functions\nSleepAudioPipelineStateMachine"]
         write_metadata["✅ Write Initial Metadata\nDynamoDB PutItem"]
-        validate["🔜 Validate &amp; Extract Metadata\n(Lambda)"]
+        audio_processor["✅ Audio Processor Lambda\nSleepAudioProcessor\n(skeleton)"]
         polly["✅ Amazon Polly Task\nSynthesizeSpeech (skeleton)"]
         update_completed["✅ Update Status COMPLETED\nDynamoDB UpdateItem"]
         update_failed["✅ Update Status FAILED\nDynamoDB UpdateItem"]
+        validate["🔜 Validate &amp; Extract Metadata\n(future enhancement)"]
         bedrock["🔜 Amazon Bedrock\nAI Soundscapes (optional)"]
         persist["🔜 Persist Processed Audio\n(Lambda)"]
     end
@@ -147,7 +150,10 @@ flowchart TD
     sfn -->|4a. write initial record| write_metadata
     write_metadata -->|status=PROCESSING| ddb
     write_metadata -->|on error| update_failed
-    sfn -->|4b. invoke| polly
+    write_metadata -->|4b. invoke| audio_processor
+    audio_processor -->|logs & receives event| ddb
+    audio_processor -->|on success| polly
+    audio_processor -->|on error| update_failed
     polly -->|on success| update_completed
     polly -->|on error| update_failed
     update_completed -->|status=COMPLETED| ddb
@@ -157,6 +163,7 @@ flowchart TD
     sns_success -->|notify subscribers| user
     sns_failed -->|notify subscribers| user
     sfn -.->|CloudWatch Logs| cw
+    audio_processor -.->|CloudWatch Logs| cw
     
     polly -.->|5. (future) pass to validate| validate
     validate -.->|6a. enhance / generate| bedrock
@@ -172,6 +179,7 @@ flowchart TD
     style output fill:#90EE90
     style eb fill:#90EE90
     style sfn fill:#90EE90
+    style audio_processor fill:#90EE90
     style polly fill:#90EE90
     style cw fill:#90EE90
     style ddb fill:#90EE90
@@ -182,20 +190,25 @@ flowchart TD
     style sns_failed fill:#90EE90
 ```
 
-**Current Implementation (Issue #3-6):**
+**Current Implementation (Issue #3-7):**
 - ✅ Input and Output S3 buckets are created with encryption, versioning, and public access blocking
 - ✅ EventBridge rule is configured to trigger on S3 Object Created events
 - ✅ Step Functions state machine is the target of the EventBridge rule
 - ✅ Step Functions state machine includes a DynamoDB PutItem task to write initial metadata
 - ✅ DynamoDB table (SleepAudioMetadataTable) stores processing metadata and status
 - ✅ State machine captures S3 event data (bucket, key) and writes to DynamoDB with status=PROCESSING
+- ✅ Lambda function (SleepAudioProcessor) added as skeleton for future audio processing
+- ✅ Lambda positioned in workflow: metadata write → Lambda → Polly → status update
+- ✅ Lambda has read-only DynamoDB access and CloudWatch Logs permissions
+- ✅ State machine can invoke Lambda with proper IAM permissions
+- ✅ Error handling includes Lambda task with catch blocks routing to failure path
 - ✅ Step Functions state machine includes a skeleton Polly task using CallAwsService
 - ✅ CloudWatch Logs enabled for Step Functions with full execution data logging
 - ✅ SNS topics created for success and failure notifications with encryption
 - ✅ State machine includes error handling with Catch blocks for all tasks
 - ✅ DynamoDB status updates for COMPLETED and FAILED states
 - ✅ SNS publish tasks for success and failure notifications
-- 🔜 Full validation, processing, and persistence logic will be added in Issue #7+
+- 🔜 Full validation, audio processing, and persistence logic will be added in Issue #8+
 
 ---
 
@@ -573,3 +586,127 @@ Failure Notification:
 - Integrate validation Lambda with state machine
 - Implement audio file size and format validation
 - Add audio metadata extraction (duration, format, sample rate)
+
+---
+
+### Issue #7: Basic Lambda Function Skeleton + Integration with State Machine (✅ Completed)
+
+**Implemented Resources:**
+
+1. **SleepAudioProcessor** (AWS Lambda Function)
+   - Runtime: Python 3.12
+   - Handler: `audio_processor.handler`
+   - Code: `lambda/audio_processor.py`
+   - Purpose: Minimal skeleton for future audio processing, validation, and metadata enrichment
+   - Environment Variables:
+     - `METADATA_TABLE_NAME`: Reference to DynamoDB metadata table
+   - Execution Role: Auto-generated with least-privilege permissions
+   - Timeout: Default (3 seconds) — sufficient for skeleton
+   - Description: "Processes audio files - validates, extracts metadata, and enriches data"
+
+2. **Lambda Handler Functionality** (Skeleton Implementation)
+   - Receives event from Step Functions state machine
+   - Extracts S3 event details (bucket name, object key)
+   - Logs input for debugging and observability
+   - Returns success response with audioId and processing metadata
+   - Includes basic error handling with try-catch
+   - **Future Enhancements Planned:**
+     - Audio file validation (format, size, duration)
+     - Metadata extraction (codec, sample rate, duration)
+     - S3 object tagging or categorization
+     - DynamoDB metadata enrichment
+
+3. **InvokeAudioProcessor Task** (Step Functions LambdaInvoke)
+   - Added to state machine workflow after `WriteInitialMetadata`
+   - Positioned before `InvokePolly` task
+   - Input Payload:
+     - `detail`: S3 event details from `$.detail`
+     - `metadata`: Initial metadata from `$.metadata`
+   - Output Path: Full event state preserved
+   - Result Path: `$.processorResult` — Lambda response stored here
+   - Error Handling: Catch block routes errors to failure path
+
+4. **IAM Permissions (Least-Privilege)**
+   - **Lambda Execution Role:**
+     - `AWSLambdaBasicExecutionRole` managed policy (CloudWatch Logs)
+     - `dynamodb:GetItem` on metadata table (read-only for future use)
+     - `dynamodb:Query` on metadata table (read-only for future use)
+   - **State Machine Execution Role:**
+     - `lambda:InvokeFunction` on SleepAudioProcessor function
+
+**State Machine Flow (Updated):**
+
+```
+Success Path:
+WriteInitialMetadata → InvokeAudioProcessor → InvokePolly → UpdateStatusCompleted → PublishSuccessNotification
+
+Failure Path (from any task):
+[Task Error] → UpdateStatusFailed → PublishFailureNotification
+```
+
+**Lambda Response Format:**
+
+Success Response:
+```json
+{
+  "status": "success",
+  "message": "Audio processor invoked successfully",
+  "audioId": "<S3 object key>",
+  "bucket": "<S3 bucket name>",
+  "processorFunction": "<Lambda function name>",
+  "requestId": "<Lambda request ID>"
+}
+```
+
+Error Response:
+```json
+{
+  "status": "error",
+  "message": "Error processing audio: <error details>",
+  "errorType": "<exception type>"
+}
+```
+
+**Security Features:**
+- Lambda execution role follows least-privilege principles:
+  - Read-only DynamoDB access (GetItem, Query) scoped to metadata table
+  - CloudWatch Logs access via managed policy
+  - No write access to DynamoDB (state machine handles status updates)
+  - No S3 access in skeleton (to be added when needed)
+- State machine role granted Lambda invoke permission scoped to specific function
+- All IAM policies auto-generated by CDK with resource-level restrictions
+- No wildcard permissions granted
+
+**Test Coverage:**
+- ✅ Lambda function construct exists verification
+- ✅ Lambda has Python 3.12 runtime verification
+- ✅ Lambda has handler configured verification
+- ✅ Lambda has environment variables (METADATA_TABLE_NAME) verification
+- ✅ Lambda execution role has DynamoDB permissions verification
+- ✅ Lambda execution role has CloudWatch Logs permissions verification
+- ✅ State machine role has Lambda invoke permissions verification
+- ✅ State machine includes Lambda invocation task verification
+
+**Architecture Updates:**
+- ✅ Mermaid diagram updated to show Lambda function in workflow
+- ✅ Lambda positioned between DynamoDB write and Polly in flow
+- ✅ Lambda highlighted as implemented skeleton with green styling
+- ✅ CloudWatch Logs connection from Lambda shown
+- ✅ Error handling path includes Lambda task
+- ✅ Implementation status section updated to reflect Issue #7 completion
+
+**TDD Approach (Strict):**
+- ✅ Tests written first (8 new tests)
+- ✅ Tests failed initially (expected behavior)
+- ✅ Minimal implementation added to pass tests
+- ✅ All tests pass (36/36 total)
+- ✅ CDK synth successful
+- ✅ No regressions in existing tests
+
+**Next Steps (Issue #8):**
+- Complete pipeline wiring with input validation
+- Implement actual audio validation logic in Lambda
+- Add audio metadata extraction (duration, format, sample rate)
+- Implement S3 output persistence
+- Add end-to-end flow testing
+- Consider adding DynamoDB update capability to Lambda if needed
