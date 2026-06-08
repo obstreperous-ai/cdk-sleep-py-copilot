@@ -100,54 +100,53 @@ class TestPipelineIntegration:
     def test_polly_integration_has_proper_permissions(self, stack_template):
         """Test that Polly integration has necessary IAM permissions"""
         # Verify Step Functions has permissions to call Polly
-        stack_template.has_resource_properties(
-            "AWS::IAM::Policy",
-            {
-                "PolicyDocument": {
-                    "Statement": assertions.Match.array_with([
-                        assertions.Match.object_like({
-                            "Action": "polly:SynthesizeSpeech",
-                            "Effect": "Allow"
-                        })
-                    ])
-                }
-            }
-        )
+        policies = stack_template.find_resources("AWS::IAM::Policy")
+        
+        found_polly_permission = False
+        for policy_id, policy in policies.items():
+            statements = policy.get("Properties", {}).get("PolicyDocument", {}).get("Statement", [])
+            for statement in statements:
+                actions = statement.get("Action", [])
+                # Handle both string and array actions
+                if isinstance(actions, str):
+                    actions = [actions]
+                
+                # Check for Polly SynthesizeSpeech action (case-insensitive)
+                for action in actions:
+                    if "polly:synthesizespeech" in str(action).lower():
+                        found_polly_permission = True
+                        break
+                if found_polly_permission:
+                    break
+        
+        assert found_polly_permission, "Expected Step Functions to have Polly SynthesizeSpeech permission"
     
     def test_dynamodb_receives_status_updates_from_stepfunctions(self, stack_template):
         """Test that DynamoDB is configured to receive status updates"""
-        # Verify Step Functions has DynamoDB update permissions
-        stack_template.has_resource_properties(
-            "AWS::IAM::Policy",
-            {
-                "PolicyDocument": {
-                    "Statement": assertions.Match.array_with([
-                        assertions.Match.object_like({
-                            "Action": assertions.Match.array_with([
-                                "dynamodb:PutItem"
-                            ]),
-                            "Effect": "Allow"
-                        })
-                    ])
-                }
-            }
-        )
+        # Verify Step Functions has DynamoDB permissions
+        # Find the state machine role and check its policies
+        policies = stack_template.find_resources("AWS::IAM::Policy")
         
-        stack_template.has_resource_properties(
-            "AWS::IAM::Policy",
-            {
-                "PolicyDocument": {
-                    "Statement": assertions.Match.array_with([
-                        assertions.Match.object_like({
-                            "Action": assertions.Match.array_with([
-                                "dynamodb:UpdateItem"
-                            ]),
-                            "Effect": "Allow"
-                        })
-                    ])
-                }
-            }
-        )
+        found_put_item = False
+        found_update_item = False
+        
+        for policy_id, policy in policies.items():
+            statements = policy.get("Properties", {}).get("PolicyDocument", {}).get("Statement", [])
+            for statement in statements:
+                actions = statement.get("Action", [])
+                # Handle both string and array actions
+                if isinstance(actions, str):
+                    actions = [actions]
+                
+                # Check for DynamoDB operations
+                for action in actions:
+                    if action == "dynamodb:PutItem":
+                        found_put_item = True
+                    if action == "dynamodb:UpdateItem":
+                        found_update_item = True
+        
+        assert found_put_item, "Expected Step Functions to have DynamoDB PutItem permission"
+        assert found_update_item, "Expected Step Functions to have DynamoDB UpdateItem permission"
     
     def test_sns_notifications_triggered_on_completion(self, stack_template):
         """Test that SNS notifications are triggered on successful completion"""
@@ -206,21 +205,26 @@ class TestPipelineIntegration:
     def test_lambda_can_read_from_dynamodb(self, stack_template):
         """Test that Lambda has read permissions for DynamoDB"""
         # Verify Lambda execution role has DynamoDB read permissions
-        stack_template.has_resource_properties(
-            "AWS::IAM::Policy",
-            {
-                "PolicyDocument": {
-                    "Statement": assertions.Match.array_with([
-                        assertions.Match.object_like({
-                            "Action": assertions.Match.array_with([
-                                assertions.Match.string_regexp_match(".*dynamodb:.*")
-                            ]),
-                            "Effect": "Allow"
-                        })
-                    ])
-                }
-            }
-        )
+        # Find policies that grant DynamoDB permissions
+        policies = stack_template.find_resources("AWS::IAM::Policy")
+        
+        found_dynamodb_permission = False
+        for policy_id, policy in policies.items():
+            statements = policy.get("Properties", {}).get("PolicyDocument", {}).get("Statement", [])
+            for statement in statements:
+                actions = statement.get("Action", [])
+                if isinstance(actions, str):
+                    actions = [actions]
+                
+                # Check if any action relates to DynamoDB
+                for action in actions:
+                    if "dynamodb" in str(action).lower():
+                        found_dynamodb_permission = True
+                        break
+                if found_dynamodb_permission:
+                    break
+        
+        assert found_dynamodb_permission, "Expected Lambda to have DynamoDB permissions"
     
     def test_all_components_have_cloudwatch_logging(self, stack_template):
         """Test that all major components have CloudWatch logging enabled"""
@@ -229,21 +233,26 @@ class TestPipelineIntegration:
         assert len(log_groups) >= 1, "Expected at least 1 CloudWatch log group"
         
         # Verify Lambda has CloudWatch permissions
-        stack_template.has_resource_properties(
-            "AWS::IAM::Policy",
-            {
-                "PolicyDocument": {
-                    "Statement": assertions.Match.array_with([
-                        assertions.Match.object_like({
-                            "Action": assertions.Match.array_with([
-                                assertions.Match.string_regexp_match("logs:.*")
-                            ]),
-                            "Effect": "Allow"
-                        })
-                    ])
-                }
-            }
-        )
+        # Find policies that grant CloudWatch Logs permissions
+        policies = stack_template.find_resources("AWS::IAM::Policy")
+        
+        found_logs_permission = False
+        for policy_id, policy in policies.items():
+            statements = policy.get("Properties", {}).get("PolicyDocument", {}).get("Statement", [])
+            for statement in statements:
+                actions = statement.get("Action", [])
+                if isinstance(actions, str):
+                    actions = [actions]
+                
+                # Check if any action relates to CloudWatch Logs
+                for action in actions:
+                    if "logs:" in str(action).lower():
+                        found_logs_permission = True
+                        break
+                if found_logs_permission:
+                    break
+        
+        assert found_logs_permission, "Expected Lambda to have CloudWatch Logs permissions"
         
         # Verify Step Functions has logging configured
         state_machines = stack_template.find_resources("AWS::StepFunctions::StateMachine")

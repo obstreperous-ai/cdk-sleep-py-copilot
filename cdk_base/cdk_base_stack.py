@@ -12,14 +12,40 @@ from aws_cdk import (
     aws_kms as kms,
     aws_lambda as lambda_,
     RemovalPolicy,
+    Duration,
 )
 from constructs import Construct
 
 class CdkBaseStack(Stack):
 
-    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+    def __init__(
+        self, 
+        scope: Construct, 
+        construct_id: str, 
+        env_name: str = "dev",
+        **kwargs
+    ) -> None:
         super().__init__(scope, construct_id, **kwargs)
         self.template_options.description = "Event-driven sleep audio pipeline base infrastructure"
+        
+        # Store environment name for configuration
+        self.env_name = env_name
+        
+        # Environment-specific configuration
+        # Dev: aggressive cleanup policies, shorter retention
+        # Stage: similar to dev for easy testing
+        # Prod: data retention, longer logs, more conservative policies
+        is_production = (env_name == "prod")
+        is_dev = (env_name == "dev")
+        
+        # Removal policy: RETAIN for prod, DESTROY for dev/stage
+        removal_policy = RemovalPolicy.RETAIN if is_production else RemovalPolicy.DESTROY
+        
+        # Log retention: 90 days for prod, 7 days for dev (using enum values)
+        log_retention = logs.RetentionDays.THREE_MONTHS if is_production else logs.RetentionDays.ONE_WEEK
+        
+        # Auto-delete S3 objects: only in dev/stage, not prod
+        auto_delete_objects = not is_production
 
         # Input S3 Bucket - receives raw audio uploads
         self.input_bucket = s3.Bucket(
@@ -28,8 +54,8 @@ class CdkBaseStack(Stack):
             encryption=s3.BucketEncryption.S3_MANAGED,
             versioned=True,
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
-            removal_policy=RemovalPolicy.DESTROY,  # For dev/test - should be RETAIN in prod
-            auto_delete_objects=True,  # For dev/test - should be False in prod
+            removal_policy=removal_policy,
+            auto_delete_objects=auto_delete_objects,
             event_bridge_enabled=True,  # Enable EventBridge notifications
         )
 
@@ -40,8 +66,8 @@ class CdkBaseStack(Stack):
             encryption=s3.BucketEncryption.S3_MANAGED,
             versioned=True,
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
-            removal_policy=RemovalPolicy.DESTROY,  # For dev/test - should be RETAIN in prod
-            auto_delete_objects=True,  # For dev/test - should be False in prod
+            removal_policy=removal_policy,
+            auto_delete_objects=auto_delete_objects,
         )
 
         # DynamoDB Table - stores audio pipeline metadata
@@ -57,7 +83,7 @@ class CdkBaseStack(Stack):
             point_in_time_recovery_specification=dynamodb.PointInTimeRecoverySpecification(
                 point_in_time_recovery_enabled=True
             ),
-            removal_policy=RemovalPolicy.DESTROY,  # For dev/test - should be RETAIN in prod
+            removal_policy=removal_policy,
         )
 
         # SNS Topics for notifications
@@ -67,7 +93,7 @@ class CdkBaseStack(Stack):
             "SnsEncryptionKey",
             description="KMS key for SNS topic encryption",
             enable_key_rotation=True,
-            removal_policy=RemovalPolicy.DESTROY,  # For dev/test - should be RETAIN in prod
+            removal_policy=removal_policy,
         )
 
         # SNS Topic for pipeline completion notifications
@@ -106,7 +132,8 @@ class CdkBaseStack(Stack):
         state_machine_log_group = logs.LogGroup(
             self,
             "StateMachineLogGroup",
-            removal_policy=RemovalPolicy.DESTROY,
+            removal_policy=removal_policy,
+            retention=log_retention,
         )
 
         # Step Functions State Machine - Sleep Audio Pipeline

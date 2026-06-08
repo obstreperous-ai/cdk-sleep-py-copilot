@@ -97,12 +97,10 @@ class TestPipelineConstruct:
         stack = PipelineStack(app, "test-pipeline-stack")
         template = assertions.Template.from_stack(stack)
         
-        # Check for description
-        template.template_matches(
-            assertions.Match.object_like({
-                "Description": assertions.Match.string_regexp_match(".*[Pp]ipeline.*")
-            })
-        )
+        # Check for description containing "pipeline"
+        template_json = template.to_json()
+        description = template_json.get("Description", "")
+        assert "pipeline" in description.lower(), f"Expected 'pipeline' in description, got: {description}"
     
     def test_pipeline_can_reference_github_repository(self):
         """Test that pipeline can be configured with GitHub repository details"""

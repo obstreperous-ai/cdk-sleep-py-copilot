@@ -7,22 +7,31 @@ from cdk_base.cdk_base_stack import CdkBaseStack
 
 
 app = cdk.App()
-CdkBaseStack(app, "CdkBaseStack",
-    # If you don't specify 'env', this stack will be environment-agnostic.
-    # Account/Region-dependent features and context lookups will not work,
-    # but a single synthesized template can be deployed anywhere.
 
-    # Uncomment the next line to specialize this stack for the AWS Account
-    # and Region that are implied by the current CLI configuration.
+# Get environment from context (e.g., cdk deploy -c env=prod)
+# Default to 'dev' if not specified
+env_name = app.node.try_get_context("env") or "dev"
 
-    #env=cdk.Environment(account=os.getenv('CDK_DEFAULT_ACCOUNT'), region=os.getenv('CDK_DEFAULT_REGION')),
-
-    # Uncomment the next line if you know exactly what Account and Region you
-    # want to deploy the stack to. */
-
-    #env=cdk.Environment(account='123456789012', region='us-east-1'),
-
-    # For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html
+# Validate environment name
+valid_environments = ["dev", "stage", "prod"]
+if env_name not in valid_environments:
+    raise ValueError(
+        f"Invalid environment '{env_name}'. "
+        f"Must be one of: {', '.join(valid_environments)}"
     )
+
+# Create stack with environment-specific configuration
+stack_name = f"CdkBaseStack-{env_name}"
+CdkBaseStack(
+    app, 
+    stack_name,
+    env_name=env_name,
+    # Environment configuration can be added here
+    # For example:
+    # env=cdk.Environment(
+    #     account=os.getenv('CDK_DEFAULT_ACCOUNT'),
+    #     region=os.getenv('CDK_DEFAULT_REGION')
+    # ),
+)
 
 app.synth()
