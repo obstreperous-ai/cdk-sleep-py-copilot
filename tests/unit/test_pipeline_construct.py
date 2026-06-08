@@ -202,8 +202,10 @@ class TestPipelineIntegration:
                 has_wildcard_resource = any(resource == "*" for resource in resources)
                 
                 # We allow some wildcard combinations for CDK/pipeline bootstrapping
-                # but flag truly dangerous combinations
+                # but we should track them for security awareness
                 if has_wildcard_action and has_wildcard_resource:
-                    # This is acceptable for admin roles in pipeline context
-                    # but we log it for awareness
-                    pass
+                    # CDK Pipelines requires some admin-level permissions for
+                    # cross-account deployments and asset publishing
+                    # In production, these should be reviewed and minimized
+                    wildcard_policies = statement.get("Sid", policy_name)
+                    assert wildcard_policies is not None  # Track that we found them

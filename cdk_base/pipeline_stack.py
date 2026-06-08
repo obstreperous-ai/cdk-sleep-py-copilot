@@ -61,6 +61,8 @@ class PipelineStack(Stack):
         
         # For the skeleton, we'll create a placeholder CodeCommit repository
         # In production, this would be replaced with GitHub source
+        # NOTE: This creates a real CodeCommit repo during testing. To clean up:
+        #   aws codecommit delete-repository --repository-name <repo-name>
         placeholder_repo = codecommit.Repository(
             self,
             "PlaceholderRepo",
