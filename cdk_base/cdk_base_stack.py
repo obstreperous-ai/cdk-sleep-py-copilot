@@ -11,6 +11,8 @@ from aws_cdk import (
     aws_sns as sns,
     aws_kms as kms,
     aws_lambda as lambda_,
+    aws_cloudwatch as cloudwatch,
+    aws_cloudwatch_actions as cw_actions,
     RemovalPolicy,
     Duration,
 )
@@ -123,6 +125,7 @@ class CdkBaseStack(Stack):
                 "METADATA_TABLE_NAME": self.metadata_table.table_name
             },
             description="Processes audio files - validates, extracts metadata, and enriches data",
+            tracing=lambda_.Tracing.ACTIVE,  # Enable X-Ray tracing
         )
 
         # Grant Lambda read permissions to DynamoDB table (for future metadata operations)
@@ -162,6 +165,14 @@ class CdkBaseStack(Stack):
             },
             result_path="$.metadata"
         )
+        
+        # Add retry policy for DynamoDB write task
+        write_metadata_task.add_retry(
+            errors=["DynamoDB.ProvisionedThroughputExceededException", "States.TaskFailed"],
+            interval=Duration.seconds(1),
+            max_attempts=3,
+            backoff_rate=2.0
+        )
 
         # Task 2: Invoke Lambda for audio processing/validation
         invoke_audio_processor = tasks.LambdaInvoke(
@@ -175,7 +186,17 @@ class CdkBaseStack(Stack):
             }),
             result_path="$.processorResult",
             # Extract the Payload from Lambda's response
-            output_path="$"
+            output_path="$",
+            # Add retry policy with exponential backoff
+            retry_on_service_exceptions=True,
+        )
+        
+        # Add additional retry configuration for Lambda-specific errors
+        invoke_audio_processor.add_retry(
+            errors=["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+            interval=Duration.seconds(2),
+            max_attempts=3,
+            backoff_rate=2.0
         )
 
         # Task 3: Invoke Polly for text-to-speech (skeleton from Issue #4)
@@ -198,6 +219,14 @@ class CdkBaseStack(Stack):
                 f"arn:aws:polly:{self.region}:{self.account}:lexicon/*"
             ],
             result_path="$.pollyResult"
+        )
+        
+        # Add retry policy for Polly task
+        polly_task.add_retry(
+            errors=["Polly.ServiceFailureException", "States.TaskFailed"],
+            interval=Duration.seconds(2),
+            max_attempts=3,
+            backoff_rate=2.0
         )
 
         # Task 4: Update DynamoDB status to COMPLETED on success
@@ -222,6 +251,14 @@ class CdkBaseStack(Stack):
                 )
             },
             result_path="$.statusUpdate"
+        )
+        
+        # Add retry policy for DynamoDB update task
+        update_completed_status.add_retry(
+            errors=["DynamoDB.ProvisionedThroughputExceededException", "States.TaskFailed"],
+            interval=Duration.seconds(1),
+            max_attempts=3,
+            backoff_rate=2.0
         )
 
         # Task 5: Publish success notification to SNS
@@ -265,6 +302,14 @@ class CdkBaseStack(Stack):
                 )
             },
             result_path="$.statusUpdate"
+        )
+        
+        # Add retry policy for DynamoDB failure update task
+        update_failed_status.add_retry(
+            errors=["DynamoDB.ProvisionedThroughputExceededException", "States.TaskFailed"],
+            interval=Duration.seconds(1),
+            max_attempts=3,
+            backoff_rate=2.0
         )
 
         # Task 7: Publish failure notification to SNS
@@ -360,4 +405,47 @@ class CdkBaseStack(Stack):
                 self.state_machine,
                 input=events.RuleTargetInput.from_event_path("$")
             )
+        )
+
+        # CloudWatch Alarms for Observability (Issue #10)
+        # Alarm 1: State Machine Execution Failures
+        self.state_machine_failure_alarm = cloudwatch.Alarm(
+            self,
+            "StateMachineExecutionFailuresAlarm",
+            metric=self.state_machine.metric_failed(
+                statistic="Sum",
+                period=Duration.minutes(5)
+            ),
+            threshold=1,
+            evaluation_periods=1,
+            comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+            alarm_description="Alert when Step Functions state machine executions fail",
+            alarm_name=f"SleepAudioPipeline-{env_name}-StateMachineFailures",
+            treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
+        )
+        
+        # Add SNS action to notify on alarm
+        self.state_machine_failure_alarm.add_alarm_action(
+            cw_actions.SnsAction(self.failed_topic)
+        )
+        
+        # Alarm 2: Lambda Function Errors
+        self.lambda_errors_alarm = cloudwatch.Alarm(
+            self,
+            "LambdaErrorsAlarm",
+            metric=self.audio_processor_function.metric_errors(
+                statistic="Sum",
+                period=Duration.minutes(5)
+            ),
+            threshold=5,
+            evaluation_periods=1,
+            comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+            alarm_description="Alert when Lambda function errors exceed threshold",
+            alarm_name=f"SleepAudioPipeline-{env_name}-LambdaErrors",
+            treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
+        )
+        
+        # Add SNS action to notify on alarm
+        self.lambda_errors_alarm.add_alarm_action(
+            cw_actions.SnsAction(self.failed_topic)
         )
