@@ -1,11 +1,13 @@
 # Architecture — Event-Driven Sleep Audio Pipeline
 
-> **Status:** **Complete pipeline wiring with input validation implemented (Issue #8)**. All components 
-> are now integrated end-to-end: Input/Output S3 buckets, EventBridge rule, Step Functions state machine 
+> **Status:** **Multi-environment support and CI/CD pipeline foundation implemented (Issue #9)**. 
+> The complete pipeline is now production-ready with environment-aware configurations for dev/stage/prod,
+> automated testing (95 tests), and a CDK Pipeline skeleton for CI/CD deployment. All components 
+> are integrated end-to-end: Input/Output S3 buckets, EventBridge rule, Step Functions state machine 
 > with validation, Lambda processor with input validation, Polly integration, DynamoDB metadata table, 
 > SNS topics for notifications, and comprehensive error handling. State machine workflow: 
 > S3 upload → EventBridge → DynamoDB write → Lambda (validation) → Polly → Status update → Notification.
-> Lambda function now includes robust input validation (required fields, file extensions).
+> Lambda function includes robust input validation (required fields, file extensions).
 > This document is the **single source of truth** for the system design. All future issues
 > and pull requests must keep their implementation consistent with this file and update it
 > when the design evolves.
@@ -18,7 +20,8 @@
 > - ✅ Issue #6: SNS Notifications + Basic Error Handling &amp; Status Updates (completed)
 > - ✅ Issue #7: Basic Lambda Function Skeleton + Integration with State Machine (completed)
 > - ✅ Issue #8: TDD: Complete Pipeline Wiring, Input Validation &amp; Basic End-to-End Flow (completed)
-> - 🔜 Issue #9: TDD: Pipeline Testing, Refinement &amp; Deployment Preparation (next)
+> - ✅ Issue #9: TDD: Pipeline Testing, Refinement &amp; Deployment Preparation (completed)
+> - 🔜 Issue #10: TDD: Advanced Error Handling, Retries &amp; Observability (next)
 
 ---
 
@@ -108,11 +111,57 @@ The end-to-end flow of a single audio file through the pipeline:
 
 ---
 
-## 4. Architecture Diagram
+## 4. Architecture Diagrams
+
+### 4.1 Multi-Environment Deployment Architecture
+
+```mermaid
+graph TB
+    subgraph source["Source Control"]
+        github["GitHub Repository\ncdk-sleep-py-copilot"]
+    end
+    
+    subgraph cicd["CI/CD Pipeline (CDK Pipelines)"]
+        pipeline["AWS CodePipeline"]
+        source_stage["Source Stage\nGitHub/CodeCommit"]
+        synth["Synth Stage\nCodeBuild\n• Install dependencies\n• Run pytest (95 tests)\n• cdk synth"]
+    end
+    
+    subgraph environments["Deployment Environments"]
+        subgraph dev_env["Development Environment"]
+            dev_stack["CdkBaseStack-dev\n• RemovalPolicy: DESTROY\n• Log Retention: 7 days\n• Auto-delete: Enabled"]
+        end
+        
+        subgraph stage_env["Staging Environment"]
+            stage_stack["CdkBaseStack-stage\n• RemovalPolicy: DESTROY\n• Log Retention: 7 days\n• Auto-delete: Enabled"]
+        end
+        
+        subgraph prod_env["Production Environment"]
+            prod_stack["CdkBaseStack-prod\n• RemovalPolicy: RETAIN\n• Log Retention: 90 days\n• Auto-delete: Disabled"]
+            approval{"Manual Approval\n(future)"}
+        end
+    end
+    
+    github -->|1. Push/PR| pipeline
+    pipeline --> source_stage
+    source_stage --> synth
+    synth -->|2. Deploy| dev_stack
+    dev_stack -->|3. Promote| stage_stack
+    stage_stack -->|4. Approve & Promote| approval
+    approval -->|5. Deploy| prod_stack
+    
+    style dev_stack fill:#90EE90
+    style stage_stack fill:#87CEEB
+    style prod_stack fill:#FFD700
+    style synth fill:#DDA0DD
+    style approval fill:#FFA07A
+```
+
+### 4.2 Detailed Pipeline Flow (Single Environment)
 
 **Legend:**
-- ✅ = Implemented (Issue #3-8)
-- 🔜 = Planned (Issue #9+)
+- ✅ = Implemented (Issue #3-9)
+- 🔜 = Planned (Issue #10+)
 
 ```mermaid
 flowchart TD
@@ -354,19 +403,122 @@ All validation errors:
 
 ## 9. Multi-Environment Support
 
-Environments (`dev` / `stage` / `prod`) are selected through **CDK context**
-(for example `cdk deploy -c env=dev`). The environment name drives:
+The infrastructure supports **three environments**: `dev`, `stage`, and `prod`, selected through 
+**CDK context** (e.g., `cdk deploy -c env=prod`). Each environment has tailored configurations:
 
-- Resource naming / removal policies (e.g. `RETAIN` in prod, `DESTROY` in dev).
-- Feature flags such as enabling the optional Bedrock branch.
-- Log retention, alarm thresholds, and KMS key configuration.
+### Environment-Specific Configuration
 
-Each environment synthesizes an isolated stack so changes can be promoted
-`dev → stage → prod` safely.
+| Setting | Dev | Stage | Prod |
+|---------|-----|-------|------|
+| **Removal Policy** | DESTROY | DESTROY | RETAIN |
+| **S3 Auto-Delete** | Enabled | Enabled | Disabled |
+| **Log Retention** | 7 days | 7 days | 90 days |
+| **Stack Name** | CdkBaseStack-dev | CdkBaseStack-stage | CdkBaseStack-prod |
+
+### Key Behaviors by Environment
+
+- **Development (`dev`)**: Optimized for rapid iteration with aggressive cleanup policies. 
+  All resources (S3, DynamoDB, KMS keys, logs) use DESTROY removal policy. S3 auto-delete 
+  is enabled for easy teardown. Logs retained for 7 days only.
+
+- **Staging (`stage`)**: Production-like testing environment with dev-like cleanup policies. 
+  Uses DESTROY for easy refresh between testing cycles. Shares the same log retention as dev (7 days).
+
+- **Production (`prod`)**: Data retention and safety first. All critical resources (S3 buckets, 
+  DynamoDB tables, KMS keys) use RETAIN removal policy to prevent accidental data loss. 
+  S3 auto-delete is disabled. Logs retained for 90 days for compliance and troubleshooting.
+
+### Deployment Commands
+
+```bash
+# Deploy to dev (default)
+cdk deploy
+
+# Deploy to specific environment
+cdk deploy -c env=dev
+cdk deploy -c env=stage
+cdk deploy -c env=prod
+
+# Synthesize for specific environment
+cdk synth -c env=prod
+
+# Diff against specific environment
+cdk diff -c env=stage
+```
+
+### CI/CD Pipeline (Skeleton)
+
+A basic **CDK Pipeline** construct (`PipelineStack`) provides the foundation for automated deployment:
+
+- **Source Stage**: Placeholder CodeCommit repository (to be replaced with GitHub connection)
+- **Synth Stage**: Automated CDK synthesis with integrated testing (pytest runs during build)
+- **Deploy Stages**: Configurable deployment to dev/stage/prod environments in sequence
+- **Future Enhancements**: Manual approval gates for prod, GitHub source integration, 
+  blue/green deployments, automated integration tests
+
+The pipeline ensures:
+1. All tests pass before deployment
+2. Changes are promoted through environments (dev → stage → prod)
+3. Infrastructure is defined as code and version-controlled
+4. Deployments are repeatable and auditable
 
 ---
 
-## 10. Future Extensibility
+## 10. Testing Strategy
+
+The project follows **Test-Driven Development (TDD)** principles with comprehensive test coverage:
+
+### Test Suite (95 tests)
+
+- **Infrastructure Tests** (43 tests): Validate CDK stack synthesis, resource properties, 
+  IAM permissions, and CloudFormation template correctness
+- **Multi-Environment Tests** (12 tests): Verify environment-specific configurations, 
+  removal policies, log retention, and stack isolation
+- **Pipeline Integration Tests** (17 tests): Validate end-to-end component wiring, 
+  permission chains, error handling, and data flow
+- **CDK Pipeline Tests** (13 tests): Verify CI/CD pipeline structure, stages, and deployment capability
+- **Lambda Validation Tests** (8 tests): Unit tests for input validation logic, error handling, 
+  and response formatting
+- **Snapshot Tests** (2 tests): Catch unintended infrastructure changes
+
+### Testing Commands
+
+```bash
+# Run all tests
+pytest
+
+# Run specific test file
+pytest tests/unit/test_cdk_base_stack.py
+
+# Run with verbose output
+pytest -v
+
+# Run tests for specific environment
+pytest tests/unit/test_multi_environment.py -v
+```
+
+### Test Coverage Areas
+
+- ✅ Resource creation and configuration
+- ✅ IAM permissions (least-privilege validation)
+- ✅ Environment-aware behavior (dev/stage/prod)
+- ✅ Error handling and failure paths
+- ✅ Integration between services (S3 → EventBridge → Step Functions → Lambda → etc.)
+- ✅ Input validation logic
+- ✅ Pipeline deployment structure
+
+### CI/CD Integration
+
+Tests run automatically in CI:
+1. On every pull request
+2. Before CDK synthesis
+3. During pipeline build stages
+
+All tests must pass before deployment proceeds.
+
+---
+
+## 11. Future Extensibility
 
 - **New processing steps** — Additional Step Functions tasks (transcription,
   loudness normalization, format conversion) slot in without changing producers.
