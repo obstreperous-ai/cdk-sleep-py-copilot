@@ -2,7 +2,7 @@
 
 > **Status:** **Full audio processing implementation completed (Issue #11)**. 
 > The pipeline now performs complete end-to-end audio processing with real Polly synthesis. The Lambda function 
-> downloads input audio from S3, synthesizes soothing sleep audio using Amazon Polly (neural Joanna voice), 
+> downloads input audio from S3, synthesizes sleep audio using Amazon Polly (neural Joanna voice), 
 > uploads processed audio to the output bucket with timestamped naming, and returns comprehensive metadata including 
 > output location and size. DynamoDB metadata records now include output details (outputBucket, outputKey, outputSize).
 > The system maintains production-ready infrastructure: comprehensive error handling, exponential backoff retry policies,
@@ -1181,9 +1181,9 @@ Implement complete audio processing pipeline with real Polly synthesis, S3 outpu
 1. **Full Audio Processing Workflow in Lambda**
    - **Input Download**: Downloads audio file from Input S3 bucket using boto3
    - **Polly Synthesis**: 
-     - Generates soothing sleep audio using Amazon Polly
+     - Generates sleep audio using Amazon Polly
      - Voice: Joanna (neural engine for natural speech)
-     - Text: Calming sleep prompt ("Close your eyes and take a deep breath...")
+     - Text: Sleep-focused prompt ("Close your eyes and take a deep breath...")
      - Output: MP3 format audio stream
    - **Output Upload**:
      - Generates unique output key: `processed/{original_name}_{timestamp}.mp3`
