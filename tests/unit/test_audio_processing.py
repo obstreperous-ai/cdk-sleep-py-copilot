@@ -20,16 +20,15 @@ from audio_processor import handler
 class TestAudioProcessingFlow:
     """Test full audio processing workflow"""
 
-    @patch('audio_processor.boto3')
-    def test_handler_downloads_audio_from_input_s3(self, mock_boto3):
+    @patch('audio_processor.get_polly_client')
+    @patch('audio_processor.get_s3_client')
+    def test_handler_downloads_audio_from_input_s3(self, mock_get_s3, mock_get_polly):
         """Test that handler downloads audio file from input S3 bucket"""
         # Setup mocks
         mock_s3_client = MagicMock()
         mock_polly_client = MagicMock()
-        mock_boto3.client.side_effect = lambda service: {
-            's3': mock_s3_client,
-            'polly': mock_polly_client
-        }[service]
+        mock_get_s3.return_value = mock_s3_client
+        mock_get_polly.return_value = mock_polly_client
         
         # Mock S3 download
         mock_s3_client.get_object.return_value = {
@@ -67,16 +66,15 @@ class TestAudioProcessingFlow:
         
         assert result['status'] == 'success'
 
-    @patch('audio_processor.boto3')
-    def test_handler_synthesizes_audio_with_polly(self, mock_boto3):
+    @patch('audio_processor.get_polly_client')
+    @patch('audio_processor.get_s3_client')
+    def test_handler_synthesizes_audio_with_polly(self, mock_get_s3, mock_get_polly):
         """Test that handler uses Polly to synthesize sleep audio"""
         # Setup mocks
         mock_s3_client = MagicMock()
         mock_polly_client = MagicMock()
-        mock_boto3.client.side_effect = lambda service: {
-            's3': mock_s3_client,
-            'polly': mock_polly_client
-        }[service]
+        mock_get_s3.return_value = mock_s3_client
+        mock_get_polly.return_value = mock_polly_client
         
         # Mock S3 operations
         mock_s3_client.get_object.return_value = {
@@ -116,17 +114,16 @@ class TestAudioProcessingFlow:
         
         assert result['status'] == 'success'
 
-    @patch('audio_processor.boto3')
+    @patch('audio_processor.get_polly_client')
+    @patch('audio_processor.get_s3_client')
     @patch('audio_processor.os.environ', {'OUTPUT_BUCKET_NAME': 'test-output-bucket'})
-    def test_handler_uploads_processed_audio_to_output_s3(self, mock_boto3):
+    def test_handler_uploads_processed_audio_to_output_s3(self, mock_get_s3, mock_get_polly):
         """Test that handler uploads processed audio to output S3 bucket"""
         # Setup mocks
         mock_s3_client = MagicMock()
         mock_polly_client = MagicMock()
-        mock_boto3.client.side_effect = lambda service: {
-            's3': mock_s3_client,
-            'polly': mock_polly_client
-        }[service]
+        mock_get_s3.return_value = mock_s3_client
+        mock_get_polly.return_value = mock_polly_client
         
         # Mock S3 operations
         mock_s3_client.get_object.return_value = {
@@ -165,17 +162,16 @@ class TestAudioProcessingFlow:
         
         assert result['status'] == 'success'
 
-    @patch('audio_processor.boto3')
+    @patch('audio_processor.get_polly_client')
+    @patch('audio_processor.get_s3_client')
     @patch('audio_processor.os.environ', {'OUTPUT_BUCKET_NAME': 'test-output-bucket'})
-    def test_handler_returns_output_metadata(self, mock_boto3):
+    def test_handler_returns_output_metadata(self, mock_get_s3, mock_get_polly):
         """Test that handler returns structured output with S3 location and metadata"""
         # Setup mocks
         mock_s3_client = MagicMock()
         mock_polly_client = MagicMock()
-        mock_boto3.client.side_effect = lambda service: {
-            's3': mock_s3_client,
-            'polly': mock_polly_client
-        }[service]
+        mock_get_s3.return_value = mock_s3_client
+        mock_get_polly.return_value = mock_polly_client
         
         # Mock S3 operations
         mock_s3_client.get_object.return_value = {
@@ -217,17 +213,16 @@ class TestAudioProcessingFlow:
         # Verify output key follows naming convention
         assert 'processed' in result['outputKey']
 
-    @patch('audio_processor.boto3')
+    @patch('audio_processor.get_polly_client')
+    @patch('audio_processor.get_s3_client')
     @patch('audio_processor.os.environ', {'OUTPUT_BUCKET_NAME': 'test-output-bucket'})
-    def test_handler_handles_s3_download_error_gracefully(self, mock_boto3):
+    def test_handler_handles_s3_download_error_gracefully(self, mock_get_s3, mock_get_polly):
         """Test that handler handles S3 download errors gracefully"""
         # Setup mocks
         mock_s3_client = MagicMock()
         mock_polly_client = MagicMock()
-        mock_boto3.client.side_effect = lambda service: {
-            's3': mock_s3_client,
-            'polly': mock_polly_client
-        }[service]
+        mock_get_s3.return_value = mock_s3_client
+        mock_get_polly.return_value = mock_polly_client
         
         # Mock S3 download error
         mock_s3_client.get_object.side_effect = Exception("S3 download failed")
@@ -250,17 +245,16 @@ class TestAudioProcessingFlow:
         assert 'message' in result
         assert 'S3 download failed' in result['message']
 
-    @patch('audio_processor.boto3')
+    @patch('audio_processor.get_polly_client')
+    @patch('audio_processor.get_s3_client')
     @patch('audio_processor.os.environ', {'OUTPUT_BUCKET_NAME': 'test-output-bucket'})
-    def test_handler_handles_polly_error_gracefully(self, mock_boto3):
+    def test_handler_handles_polly_error_gracefully(self, mock_get_s3, mock_get_polly):
         """Test that handler handles Polly synthesis errors gracefully"""
         # Setup mocks
         mock_s3_client = MagicMock()
         mock_polly_client = MagicMock()
-        mock_boto3.client.side_effect = lambda service: {
-            's3': mock_s3_client,
-            'polly': mock_polly_client
-        }[service]
+        mock_get_s3.return_value = mock_s3_client
+        mock_get_polly.return_value = mock_polly_client
         
         # Mock S3 download
         mock_s3_client.get_object.return_value = {
@@ -289,17 +283,16 @@ class TestAudioProcessingFlow:
         assert 'message' in result
         assert 'Polly synthesis failed' in result['message']
 
-    @patch('audio_processor.boto3')
+    @patch('audio_processor.get_polly_client')
+    @patch('audio_processor.get_s3_client')
     @patch('audio_processor.os.environ', {'OUTPUT_BUCKET_NAME': 'test-output-bucket'})
-    def test_output_key_includes_timestamp_for_uniqueness(self, mock_boto3):
+    def test_output_key_includes_timestamp_for_uniqueness(self, mock_get_s3, mock_get_polly):
         """Test that output key includes timestamp for uniqueness"""
         # Setup mocks
         mock_s3_client = MagicMock()
         mock_polly_client = MagicMock()
-        mock_boto3.client.side_effect = lambda service: {
-            's3': mock_s3_client,
-            'polly': mock_polly_client
-        }[service]
+        mock_get_s3.return_value = mock_s3_client
+        mock_get_polly.return_value = mock_polly_client
         
         # Mock S3 operations
         mock_s3_client.get_object.return_value = {

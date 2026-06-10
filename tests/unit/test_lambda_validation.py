@@ -7,7 +7,7 @@ and returns appropriate error responses for invalid inputs.
 
 import json
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch, Mock
 
 # Import the Lambda handler
 import sys
@@ -84,8 +84,30 @@ class TestLambdaValidation:
             assert result['status'] == 'error', f"Expected error for extension {ext}"
             assert 'format' in result['message'].lower() or 'extension' in result['message'].lower()
 
-    def test_handler_accepts_supported_audio_extensions(self):
+    @patch('audio_processor.get_polly_client')
+    @patch('audio_processor.get_s3_client')
+    @patch('audio_processor.os.environ', {'OUTPUT_BUCKET_NAME': 'test-output-bucket'})
+    def test_handler_accepts_supported_audio_extensions(self, mock_get_s3, mock_get_polly):
         """Test that handler accepts supported audio file extensions"""
+        # Setup mocks
+        mock_s3_client = MagicMock()
+        mock_polly_client = MagicMock()
+        mock_get_s3.return_value = mock_s3_client
+        mock_get_polly.return_value = mock_polly_client
+        
+        # Mock S3 operations
+        mock_s3_client.get_object.return_value = {
+            'Body': Mock(read=lambda: b'mock audio data'),
+            'ContentLength': 1024
+        }
+        mock_s3_client.put_object.return_value = {}
+        
+        # Mock Polly synthesis
+        mock_polly_client.synthesize_speech.return_value = {
+            'AudioStream': Mock(read=lambda: b'mock polly audio'),
+            'ContentType': 'audio/mpeg'
+        }
+        
         supported_extensions = ['.mp3', '.wav', '.m4a', '.ogg', '.flac']
         
         for ext in supported_extensions:
