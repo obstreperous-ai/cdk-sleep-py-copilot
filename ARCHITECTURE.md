@@ -1,14 +1,18 @@
 # Architecture — Event-Driven Sleep Audio Pipeline
 
-> **Status:** **Advanced error handling, retries, and observability implemented (Issue #10)**. 
-> The complete pipeline is now production-ready with comprehensive error handling, exponential backoff retry policies,
-> X-Ray tracing, structured JSON logging, and CloudWatch alarms for critical failure paths. The system includes
-> environment-aware configurations for dev/stage/prod, automated testing (108 tests), and a CDK Pipeline skeleton
-> for CI/CD deployment. All components are integrated end-to-end with robust observability: Input/Output S3 buckets,
-> EventBridge rule, Step Functions state machine with retry policies and error handling, Lambda processor with 
-> X-Ray tracing and structured logging, Polly integration, DynamoDB metadata table, SNS topics for notifications,
-> and CloudWatch alarms monitoring execution failures. State machine workflow: S3 upload → EventBridge → 
-> DynamoDB write (with retries) → Lambda (validation, X-Ray traced) → Polly (with retries) → Status update → Notification.
+> **Status:** **Full audio processing implementation completed (Issue #11)**. 
+> The pipeline now performs complete end-to-end audio processing with real Polly synthesis. The Lambda function 
+> downloads input audio from S3, synthesizes sleep audio using Amazon Polly (neural Joanna voice), 
+> uploads processed audio to the output bucket with timestamped naming, and returns comprehensive metadata including 
+> output location and size. DynamoDB metadata records now include output details (outputBucket, outputKey, outputSize).
+> The system maintains production-ready infrastructure: comprehensive error handling, exponential backoff retry policies,
+> X-Ray tracing, structured JSON logging, CloudWatch alarms, environment-aware configurations for dev/stage/prod,
+> and automated testing (58 tests covering Lambda processing, CDK infrastructure, and integration scenarios).
+> All components are integrated end-to-end: Input/Output S3 buckets, EventBridge rule, Step Functions state machine,
+> Lambda processor with full audio processing workflow, Polly integration, DynamoDB metadata table with output tracking,
+> SNS topics for notifications, and CloudWatch alarms monitoring execution failures.
+> State machine workflow: S3 upload → EventBridge → DynamoDB write (with retries) → Lambda (download, Polly synthesis, 
+> upload, X-Ray traced) → Polly placeholder task → Status update with output metadata → Notification.
 > This document is the **single source of truth** for the system design. All future issues
 > and pull requests must keep their implementation consistent with this file and update it
 > when the design evolves.
@@ -23,7 +27,7 @@
 > - ✅ Issue #8: TDD: Complete Pipeline Wiring, Input Validation &amp; Basic End-to-End Flow (completed)
 > - ✅ Issue #9: TDD: Pipeline Testing, Refinement &amp; Deployment Preparation (completed)
 > - ✅ Issue #10: TDD: Advanced Error Handling, Retries &amp; Observability (completed)
-> - 🔜 Issue #11: TDD: Full Audio Processing Implementation &amp; Output Handling (next)
+> - ✅ Issue #11: TDD: Full Audio Processing Implementation &amp; Output Handling (completed)
 
 ---
 
@@ -287,31 +291,53 @@ flowchart TD
      - `inputKey`: S3 object key
      - `createdAt`, `updatedAt`: Execution timestamps
 
-4. **Input Validation (Lambda)**
+4. **Audio Processing (Lambda)**
    - Step Functions invokes **SleepAudioProcessor** Lambda
-   - Lambda validates:
-     - ✅ Required field: `detail` exists in event
-     - ✅ Required field: `bucket.name` is present and non-empty
-     - ✅ Required field: `object.key` is present and non-empty
-     - ✅ File extension: Must be one of `.mp3`, `.wav`, `.m4a`, `.ogg`, `.flac`
-   - If validation passes: Lambda returns `{status: 'success', ...}`
-   - If validation fails: Lambda returns `{status: 'error', errorType: 'ValidationError', ...}`
+   - **Lambda Workflow:**
+     a. **Input Validation**
+        - ✅ Required field: `detail` exists in event
+        - ✅ Required field: `bucket.name` is present and non-empty
+        - ✅ Required field: `object.key` is present and non-empty
+        - ✅ File extension: Must be one of `.mp3`, `.wav`, `.m4a`, `.ogg`, `.flac`
+     b. **Download Input Audio**
+        - Downloads file from Input S3 bucket using `s3_client.get_object()`
+        - Validates file is accessible and readable
+     c. **Synthesize Sleep Audio**
+        - Uses Amazon Polly `synthesize_speech()` with:
+          - **Text**: Soothing sleep prompt ("Close your eyes and take a deep breath...")
+          - **Voice**: Joanna (neural engine for natural speech)
+          - **Format**: MP3 audio output
+     d. **Upload Processed Audio**
+        - Generates unique output key: `processed/{original_name}_{timestamp}.mp3`
+        - Uploads synthesized audio to Output S3 bucket
+        - Sets Content-Type: `audio/mpeg`
+     e. **Return Metadata**
+        - Returns structured response:
+          - `status`: "success"
+          - `audioId`: Original object key
+          - `outputBucket`: Output S3 bucket name
+          - `outputKey`: Generated output key with timestamp
+          - `outputSize`: Size of processed audio in bytes
 
-5. **Audio Processing (Polly)**
-   - Step Functions executes **InvokePolly** task (skeleton implementation)
+5. **Polly Integration (Placeholder)**
+   - Step Functions executes **InvokePolly** task (skeleton for future enhancement)
    - Calls Amazon Polly's SynthesizeSpeech API
-   - Returns audio synthesis result (placeholder for future enhancement)
+   - Returns audio synthesis result (currently placeholder)
 
 6. **Status Update (Success)**
    - Step Functions executes **UpdateStatusCompleted** task
    - DynamoDB UpdateItem sets:
      - `status`: "COMPLETED"
      - `updatedAt`: Current timestamp
+     - `outputBucket`: From Lambda result `$.processorResult.Payload.outputBucket`
+     - `outputKey`: From Lambda result `$.processorResult.Payload.outputKey`
+     - `outputSize`: From Lambda result `$.processorResult.Payload.outputSize`
 
 7. **Success Notification**
    - Step Functions executes **PublishSuccessNotification** task
    - Publishes message to **SleepAudioPipelineCompleted** SNS topic
    - Message includes: audioId, executionId, timestamp, status
+
 
 ### Failure Path (Error Handling)
 
@@ -715,10 +741,14 @@ All tests must pass before deployment proceeds.
 | `status` | String | Current processing status: PROCESSING, COMPLETED, FAILED |
 | `inputBucket` | String | Source S3 bucket name |
 | `inputKey` | String | Source S3 object key |
+| `outputBucket` | String | Output S3 bucket name (set on completion) |
+| `outputKey` | String | Output S3 object key with timestamp (e.g., `processed/audio_20260610_064550.mp3`) |
+| `outputSize` | Number | Size of processed audio file in bytes |
 | `createdAt` | String (ISO 8601) | State machine execution start timestamp |
 | `updatedAt` | String (ISO 8601) | Last update timestamp |
+| `errorInfo` | String | Error message (only set on FAILED status) |
 
-*Note: Future attributes (e.g., `outputBucket`, `outputKey`, `duration`, `errorMessage`) will be added in subsequent issues.*
+*Note: Output attributes (`outputBucket`, `outputKey`, `outputSize`) are populated by Lambda processing result and written during status update to COMPLETED.*
 
 **Security Features:**
 - DynamoDB table uses AWS-managed encryption (SSE-DynamoDB)
@@ -1138,6 +1168,84 @@ Enhance test coverage, refine the pipeline for production readiness, and establi
 - S3 output handling
 - Enhanced Polly integration with dynamic text
 - Audio metadata extraction and enrichment
+
+---
+
+### Issue #11: TDD: Full Audio Processing Implementation & Output Handling (✅ Completed)
+
+**Goal:**
+Implement complete audio processing pipeline with real Polly synthesis, S3 output handling, and comprehensive metadata tracking.
+
+**Implemented Features:**
+
+1. **Full Audio Processing Workflow in Lambda**
+   - **Input Download**: Downloads audio file from Input S3 bucket using boto3
+   - **Polly Synthesis**: 
+     - Generates sleep audio using Amazon Polly
+     - Voice: Joanna (neural engine for natural speech)
+     - Text: Sleep-focused prompt ("Close your eyes and take a deep breath...")
+     - Output: MP3 format audio stream
+   - **Output Upload**:
+     - Generates unique output key: `processed/{original_name}_{timestamp}.mp3`
+     - Uploads synthesized audio to Output S3 bucket
+     - Sets proper Content-Type: `audio/mpeg`
+   - **Metadata Return**:
+     - Returns structured response with: audioId, outputBucket, outputKey, outputSize
+     - Provides comprehensive error details for S3 and Polly failures
+
+2. **Lambda Permissions & Configuration**
+   - Timeout increased to 60 seconds (from default 3s) for audio processing
+   - Granted S3 read permission on Input bucket
+   - Granted S3 write permission on Output bucket
+   - Granted Polly SynthesizeSpeech permission (wildcard resource)
+   - Added OUTPUT_BUCKET_NAME environment variable
+   - Maintained existing DynamoDB read and X-Ray tracing permissions
+
+3. **DynamoDB Output Metadata Tracking**
+   - UpdateStatusCompleted task now includes:
+     - `outputBucket`: Extracted from `$.processorResult.Payload.outputBucket`
+     - `outputKey`: Extracted from `$.processorResult.Payload.outputKey`
+     - `outputSize`: Extracted from `$.processorResult.Payload.outputSize` (as Number)
+   - Complete metadata schema now includes all output details
+   - Enables tracking of processed audio artifacts for each job
+
+4. **Processing Functions**
+   - `get_s3_client()` / `get_polly_client()`: Lazy client initialization for testability
+   - `generate_output_key()`: Creates timestamped output keys for uniqueness
+   - `download_from_s3()`: Downloads input audio with error handling
+   - `synthesize_sleep_audio()`: Polly synthesis with structured error messages
+   - `upload_to_s3()`: Uploads processed audio with proper content type
+
+**Testing:**
+- Added 7 new comprehensive tests in `test_audio_processing.py`
+- Updated 1 existing test in `test_lambda_validation.py` for AWS client mocking
+- All tests follow strict TDD (failing tests written first, then implementation)
+- Total test count: 58 tests (all passing)
+  - 7 audio processing tests (S3 download, Polly, upload, metadata, errors)
+  - 8 Lambda validation tests
+  - 43 CDK infrastructure tests
+- Tests verify: Full workflow, client mocking, error handling, output structure
+
+**Architecture Updates:**
+- Updated Section 5: "End-to-End Flow Details" - Success Path
+  - Step 4 expanded with complete Lambda audio processing workflow
+  - Step 6 updated to include output metadata in status update
+- Updated metadata schema table to include output fields (outputBucket, outputKey, outputSize)
+- Updated status header to reflect Issue #11 completion
+- Updated test count from 108 to 58 (accurate count)
+
+**Security & Best Practices:**
+- Maintains least-privilege IAM permissions (specific bucket grants)
+- Polly permission uses wildcard (API doesn't support resource-level permissions)
+- Structured JSON logging throughout processing workflow
+- Error handling with detailed messages for debugging
+- X-Ray tracing enabled for distributed request tracking
+
+**Next Steps (Issue #12):**
+- End-to-end validation testing
+- Documentation polish and completion review
+- Final architecture diagram refinement
+- Project readiness assessment
 
 ---
 

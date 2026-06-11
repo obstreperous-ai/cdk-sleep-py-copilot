@@ -114,7 +114,7 @@ class CdkBaseStack(Stack):
             master_key=sns_encryption_key,
         )
 
-        # Lambda Function - Audio Processor (skeleton for future audio processing)
+        # Lambda Function - Audio Processor (full audio processing implementation)
         self.audio_processor_function = lambda_.Function(
             self,
             "SleepAudioProcessor",
@@ -122,14 +122,32 @@ class CdkBaseStack(Stack):
             handler="audio_processor.handler",
             code=lambda_.Code.from_asset("lambda"),
             environment={
-                "METADATA_TABLE_NAME": self.metadata_table.table_name
+                "METADATA_TABLE_NAME": self.metadata_table.table_name,
+                "OUTPUT_BUCKET_NAME": self.output_bucket.bucket_name
             },
-            description="Processes audio files - validates, extracts metadata, and enriches data",
+            description="Processes audio files - downloads input, generates sleep audio with Polly, uploads to output bucket",
             tracing=lambda_.Tracing.ACTIVE,  # Enable X-Ray tracing
+            timeout=Duration.seconds(60),  # Increase timeout for audio processing
         )
 
-        # Grant Lambda read permissions to DynamoDB table (for future metadata operations)
+        # Grant Lambda permissions
+        # 1. Read from DynamoDB table (for future metadata operations)
         self.metadata_table.grant_read_data(self.audio_processor_function)
+        
+        # 2. Read from Input S3 bucket
+        self.input_bucket.grant_read(self.audio_processor_function)
+        
+        # 3. Write to Output S3 bucket
+        self.output_bucket.grant_write(self.audio_processor_function)
+        
+        # 4. Polly synthesize permission
+        self.audio_processor_function.add_to_role_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=["polly:SynthesizeSpeech"],
+                resources=["*"]  # Polly SynthesizeSpeech doesn't support resource-level permissions
+            )
+        )
 
         # CloudWatch Log Group for Step Functions state machine logging
         state_machine_log_group = logs.LogGroup(
@@ -239,15 +257,27 @@ class CdkBaseStack(Stack):
                     sfn.JsonPath.string_at("$.detail.object.key")
                 )
             },
-            update_expression="SET #status = :completed, #updatedAt = :timestamp",
+            update_expression="SET #status = :completed, #updatedAt = :timestamp, #outputBucket = :outputBucket, #outputKey = :outputKey, #outputSize = :outputSize",
             expression_attribute_names={
                 "#status": "status",
-                "#updatedAt": "updatedAt"
+                "#updatedAt": "updatedAt",
+                "#outputBucket": "outputBucket",
+                "#outputKey": "outputKey",
+                "#outputSize": "outputSize"
             },
             expression_attribute_values={
                 ":completed": tasks.DynamoAttributeValue.from_string("COMPLETED"),
                 ":timestamp": tasks.DynamoAttributeValue.from_string(
                     sfn.JsonPath.string_at("$$.State.EnteredTime")
+                ),
+                ":outputBucket": tasks.DynamoAttributeValue.from_string(
+                    sfn.JsonPath.string_at("$.processorResult.Payload.outputBucket")
+                ),
+                ":outputKey": tasks.DynamoAttributeValue.from_string(
+                    sfn.JsonPath.string_at("$.processorResult.Payload.outputKey")
+                ),
+                ":outputSize": tasks.DynamoAttributeValue.from_number(
+                    sfn.JsonPath.number_at("$.processorResult.Payload.outputSize")
                 )
             },
             result_path="$.statusUpdate"
