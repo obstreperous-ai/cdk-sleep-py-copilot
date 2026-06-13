@@ -13,6 +13,7 @@ A production-ready, serverless, event-driven AWS pipeline that ingests audio fil
 
 > 📐 **Architecture:** See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the complete system design, Mermaid diagrams, and detailed component descriptions.  
 > 🤖 **Meta-Prompts:** See [`META-PROMPTS.md`](./META-PROMPTS.md) for reusable agent patterns and meta-prompting templates.  
+> 🧪 **Experiment Design:** See [`EXPERIMENT.md`](./EXPERIMENT.md) for the comprehensive experimental methodology, prompting strategy, and research findings.  
 > 🤝 **Contributing:** See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for external contribution guidelines.  
 > 🔧 **Agent Guidelines:** See [`AGENT_GUIDELINES.md`](./AGENT_GUIDELINES.md) for TDD workflow and agent contribution process.  
 > 📊 **Project Summary:** See [`SUMMARY.md`](./SUMMARY.md) for key decisions, lessons learned, and implementation journey.
@@ -461,6 +462,7 @@ cdk-sleep-py-copilot/
 │       └── ci.yml             # GitHub Actions CI workflow
 ├── ARCHITECTURE.md            # Complete architecture documentation (single source of truth)
 ├── META-PROMPTS.md            # Reusable agent patterns and meta-prompting templates
+├── EXPERIMENT.md              # Experimental design, methodology, and research findings
 ├── AGENT_GUIDELINES.md        # TDD workflow and agent contribution guidelines
 ├── CONTRIBUTING.md            # External contributor guidelines
 ├── SUMMARY.md                 # Project summary, lessons learned, and key decisions
@@ -615,6 +617,7 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 ### Documentation
 - **Architecture**: [`ARCHITECTURE.md`](./ARCHITECTURE.md) - Complete system design
 - **Meta-Prompts**: [`META-PROMPTS.md`](./META-PROMPTS.md) - Reusable agent patterns
+- **Experiment Design**: [`EXPERIMENT.md`](./EXPERIMENT.md) - Experimental methodology and research findings
 - **Summary**: [`SUMMARY.md`](./SUMMARY.md) - Lessons learned and key decisions
 
 ### AWS Documentation
