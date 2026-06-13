@@ -1,6 +1,6 @@
 # Architecture — Event-Driven Sleep Audio Pipeline
 
-> **Status:** **Project Complete (Issue #12)** - End-to-end validation completed, all documentation polished, 138 tests passing. 
+> **Status:** **Project Complete (Issue #13)** - Documentation review and meta-prompting patterns extraction completed. All 138 tests passing.
 > The pipeline is production-ready with complete end-to-end audio processing, comprehensive testing, monitoring, and documentation.
 > The Lambda function downloads input audio from S3, synthesizes sleep audio using Amazon Polly (neural Joanna voice), 
 > uploads processed audio to the output bucket with timestamped naming, and returns comprehensive metadata including 
@@ -17,6 +17,13 @@
 > and pull requests must keep their implementation consistent with this file and update it
 > when the design evolves.
 > 
+> **Documentation Suite:**
+> - [`README.md`](./README.md) - User-facing documentation with experiment methodology
+> - [`META-PROMPTS.md`](./META-PROMPTS.md) - Reusable agent patterns and meta-prompting templates
+> - [`CONTRIBUTING.md`](./CONTRIBUTING.md) - External contributor guidelines
+> - [`AGENT_GUIDELINES.md`](./AGENT_GUIDELINES.md) - TDD workflow for agents
+> - [`SUMMARY.md`](./SUMMARY.md) - Project journey, lessons learned, and key decisions
+> 
 > **Implementation Progress:**
 > - ✅ Issue #2: Design baseline established
 > - ✅ Issue #3: Core S3 Buckets + EventBridge Rule (completed)
@@ -29,6 +36,7 @@
 > - ✅ Issue #10: TDD: Advanced Error Handling, Retries &amp; Observability (completed)
 > - ✅ Issue #11: TDD: Full Audio Processing Implementation &amp; Output Handling (completed)
 > - ✅ Issue #12: TDD: End-to-End Validation, Documentation Polish &amp; Project Completion (completed)
+> - ✅ Issue #13: Documentation Review & Meta-Prompting Patterns (completed)
 
 ---
 
@@ -1549,24 +1557,174 @@ The complete pipeline validates:
 | Supported Audio Formats | 5 (.mp3, .wav, .m4a, .ogg, .flac) |
 | Environments | 3 (dev, stage, prod) |
 | CloudWatch Alarms | 2 (state machine, Lambda) |
-| Development Issues | 11 (Issues #2-#12) |
+| Development Issues | 12 (Issues #2-#13) |
 
 **Project Completion:**
 
 The Event-Driven Sleep Audio Pipeline is now **production-ready** with:
 - Complete end-to-end functionality
 - Comprehensive testing (138 tests)
-- Professional documentation (README, ARCHITECTURE, SUMMARY)
+- Professional documentation (README, ARCHITECTURE, SUMMARY, META-PROMPTS, CONTRIBUTING)
 - Multi-environment support
 - Robust error handling and observability
 - Security best practices
 - CI/CD integration
+- Reusable meta-prompting patterns for future projects
 
 This concludes the development of the Sleep Audio Pipeline following strict TDD methodology. The project is ready for:
 - Production deployment
 - Further experimentation
-- Final experiment report writing
+- Use as reference for agentic TDD IaC projects
 - Extension with additional features (batch processing, enhanced audio analysis, web UI)
+
+---
+
+### Issue #13: Documentation Review & Meta-Prompting Patterns (✅ Completed)
+
+**Objective:** Review and enrich README, extract meta-prompting patterns, and polish documentation for completeness.
+
+**Implemented Documentation Enhancements:**
+
+1. **META-PROMPTS.md** (New - 20KB+)
+   - Complete meta-prompting philosophy for agentic development
+   - 6 core patterns:
+     - Single Source of Truth
+     - Strict TDD Workflow
+     - Scope Discipline
+     - Documentation Synchronization
+     - Multi-Environment Context
+     - Validation Commands
+   - Agent instruction templates:
+     - New Feature Development
+     - Bug Fix
+     - Documentation Update
+     - Security Enhancement
+   - Testing patterns (infrastructure, Lambda, integration)
+   - Security patterns (least-privilege IAM, encryption, input validation)
+   - Observability patterns (structured logging, X-Ray, CloudWatch alarms, retry policies)
+   - Best practices and success metrics
+   - Reusable for future TDD IaC projects
+
+2. **CONTRIBUTING.md** (New - 11KB+)
+   - External contributor guidelines
+   - Development environment setup
+   - TDD workflow instructions
+   - Pull request process
+   - Testing guidelines
+   - Documentation standards
+   - Code style guidelines (Python, CDK, Lambda)
+   - Bug reporting and feature request templates
+   - Q&A and support resources
+
+3. **README.md Enhancements**
+   - Added 4 new badges:
+     - Python 3.12+
+     - AWS CDK 2.x
+     - License (Apache 2.0)
+     - Tests (138 passing)
+   - New "Experiment Methodology" section:
+     - Pure issue-driven development approach
+     - Strict TDD rules (Red-Green-Refactor)
+     - Agentic development with GitHub Copilot
+     - Key achievements (100% TDD adherence, zero technical debt)
+     - Link to experiment report (SUMMARY.md)
+   - New "Meta-Prompting Patterns" section:
+     - Core patterns demonstrated
+     - Link to META-PROMPTS.md
+     - Application to new projects
+     - Key insights for agent success
+   - Updated table of contents
+   - Enhanced project structure with new files
+   - Added "Contributing" section
+   - Restructured "Additional Resources" with documentation and AWS links
+   - Enhanced "Acknowledgments" with development timeline table
+   - Updated "Status" section with reference implementation notes
+
+4. **ARCHITECTURE.md Updates**
+   - Updated status header to Issue #13 completion
+   - Added "Documentation Suite" section with links to all docs
+   - Added Issue #13 to Implementation Progress
+   - Added Issue #13 section to Implementation Status (this section)
+   - Updated "Project Completion" to reference new documentation
+
+5. **Documentation Cross-References**
+   - All documentation files now reference each other appropriately
+   - Clear document hierarchy and purpose established:
+     - README.md: User-facing, experiment showcase
+     - ARCHITECTURE.md: Single source of truth for technical design
+     - META-PROMPTS.md: Reusable patterns for future projects
+     - CONTRIBUTING.md: External contributor onboarding
+     - AGENT_GUIDELINES.md: Agent TDD workflow
+     - SUMMARY.md: Project journey and lessons learned
+
+**Validation Results:**
+
+```bash
+# All tests still passing
+pytest -v
+# ✅ 138 passed in ~14 seconds
+
+# CDK synthesis successful
+cdk synth
+# ✅ CloudFormation template generated successfully
+
+# CI pipeline verified
+# ✅ All validation commands working
+```
+
+**TDD Approach:**
+
+This was a **documentation-only issue**, so no new tests were added:
+1. ✅ **Reviewed existing documentation structure** - Identified strengths and gaps
+2. ✅ **Extracted reusable patterns** - Created META-PROMPTS.md from AGENT_GUIDELINES.md and project practices
+3. ✅ **Enhanced user-facing documentation** - Added experiment methodology and meta-prompting focus to README.md
+4. ✅ **Created contributor guidelines** - Added CONTRIBUTING.md for external contributors
+5. ✅ **Updated all cross-references** - Ensured documentation coherence across all files
+6. ✅ **Verified no code changes** - No infrastructure or Lambda code modified (documentation only)
+
+**Documentation Metrics:**
+
+| Document | Size | Purpose |
+|----------|------|---------|
+| README.md | 14KB+ | User-facing documentation, experiment showcase |
+| ARCHITECTURE.md | 62KB+ | Single source of truth for technical design |
+| META-PROMPTS.md | 20KB+ | Reusable agent patterns and templates |
+| CONTRIBUTING.md | 11KB+ | External contributor guidelines |
+| AGENT_GUIDELINES.md | 15KB+ | Agent TDD workflow |
+| SUMMARY.md | 16KB+ | Project journey and lessons learned |
+| **Total Documentation** | **138KB+** | **Complete documentation suite** |
+
+**Reusable Patterns Extracted:**
+
+The META-PROMPTS.md file extracts and documents patterns that can be reused for:
+- Future AWS CDK projects (Python, TypeScript, etc.)
+- Other Infrastructure as Code tools (Terraform, Pulumi)
+- Application code with TDD requirements
+- Any AI-assisted development projects
+- Agent-driven development workflows
+
+**Key Achievement:**
+
+This issue completes the **documentation layer** of the project, making it a **complete reference implementation** for:
+- Test-Driven Infrastructure as Code
+- Agentic development with GitHub Copilot
+- Event-driven serverless architectures on AWS
+- Meta-prompting patterns for AI-assisted development
+- Professional open-source project documentation
+
+**Final Documentation Status:**
+
+```
+✅ README.md: Comprehensive user guide with experiment methodology
+✅ ARCHITECTURE.md: Complete technical design (single source of truth)
+✅ META-PROMPTS.md: Reusable agent patterns and templates
+✅ CONTRIBUTING.md: External contributor onboarding
+✅ AGENT_GUIDELINES.md: Agent TDD workflow
+✅ SUMMARY.md: Project journey and lessons learned
+✅ LICENSE: Apache License 2.0
+✅ All documentation cross-referenced and coherent
+✅ Ready for use as reference implementation
+```
 
 ---
 
