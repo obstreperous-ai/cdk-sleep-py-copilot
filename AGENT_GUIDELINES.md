@@ -126,7 +126,7 @@ cdk deploy -c env=prod
 
 ## Testing Strategy
 
-The project includes **138 comprehensive tests** organized by category:
+The project includes **143 comprehensive tests** organized by category:
 
 ### Test Files
 
@@ -155,11 +155,13 @@ The project includes **138 comprehensive tests** organized by category:
    - Input validation (missing fields, empty values)
    - File format validation (supported/unsupported extensions)
 
-5. **`test_audio_processing.py`** (7 tests)
+5. **`test_audio_processing.py`** (12 tests)
    - S3 download/upload operations
    - Polly synthesis integration
    - Output metadata generation
-   - Error handling
+   - Error handling (S3, Polly failures)
+   - Logging edge cases (WARN, DEBUG)
+   - Client factory functions
 
 6. **`test_error_handling_observability.py`** (13 tests)
    - Retry policies (Lambda, Polly, DynamoDB)
