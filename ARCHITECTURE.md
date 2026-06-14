@@ -20,6 +20,7 @@
 > **Documentation Suite:**
 > - [`README.md`](./README.md) - User-facing documentation with experiment methodology
 > - [`META-PROMPTS.md`](./META-PROMPTS.md) - Reusable agent patterns and meta-prompting templates
+> - [`EXPERIMENT.md`](./EXPERIMENT.md) - Experimental design, methodology, and research findings
 > - [`CONTRIBUTING.md`](./CONTRIBUTING.md) - External contributor guidelines
 > - [`AGENT_GUIDELINES.md`](./AGENT_GUIDELINES.md) - TDD workflow for agents
 > - [`SUMMARY.md`](./SUMMARY.md) - Project journey, lessons learned, and key decisions
