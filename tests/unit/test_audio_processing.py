@@ -325,3 +325,109 @@ class TestAudioProcessingFlow:
         assert 'test' in output_key  # Original filename
         # Verify it's in processed directory
         assert output_key.startswith('processed/')
+
+    @patch('audio_processor.get_polly_client')
+    @patch('audio_processor.get_s3_client')
+    @patch('audio_processor.os.environ', {'OUTPUT_BUCKET_NAME': 'test-output-bucket'})
+    def test_handler_handles_s3_upload_error_gracefully(self, mock_get_s3, mock_get_polly):
+        """Test that handler handles S3 upload errors gracefully"""
+        # Setup mocks
+        mock_s3_client = MagicMock()
+        mock_polly_client = MagicMock()
+        mock_get_s3.return_value = mock_s3_client
+        mock_get_polly.return_value = mock_polly_client
+        
+        # Mock S3 download - success
+        mock_s3_client.get_object.return_value = {
+            'Body': Mock(read=lambda: b'mock audio data'),
+            'ContentLength': 1024
+        }
+        
+        # Mock Polly synthesis - success
+        mock_polly_client.synthesize_speech.return_value = {
+            'AudioStream': Mock(read=lambda: b'mock polly audio'),
+            'ContentType': 'audio/mpeg'
+        }
+        
+        # Mock S3 upload - failure
+        mock_s3_client.put_object.side_effect = Exception("S3 upload failed: Access Denied")
+        
+        event = {
+            'detail': {
+                'bucket': {'name': 'test-input-bucket'},
+                'object': {'key': 'test.mp3'}
+            }
+        }
+        context = MagicMock()
+        context.function_name = "test-function"
+        context.request_id = "test-request-id"
+        
+        # Call handler
+        result = handler(event, context)
+        
+        # Verify error response
+        assert result['status'] == 'error'
+        assert 'message' in result
+        assert 'S3 upload failed' in result['message']
+
+
+class TestLoggingEdgeCases:
+    """Test edge cases in structured logging"""
+    
+    @patch('audio_processor.logger')
+    def test_log_structured_handles_warn_level(self, mock_logger):
+        """Test that log_structured correctly handles WARN level"""
+        from audio_processor import log_structured
+        
+        log_structured("WARN", "Warning message", {"key": "value"})
+        
+        # Verify warning method was called
+        assert mock_logger.warning.called
+        call_args = mock_logger.warning.call_args[0][0]
+        log_data = json.loads(call_args)
+        assert log_data['level'] == 'WARN'
+        assert log_data['message'] == 'Warning message'
+    
+    @patch('audio_processor.logger')
+    def test_log_structured_handles_debug_level(self, mock_logger):
+        """Test that log_structured correctly handles DEBUG level"""
+        from audio_processor import log_structured
+        
+        log_structured("DEBUG", "Debug message", {"key": "value"})
+        
+        # Verify debug method was called
+        assert mock_logger.debug.called
+        call_args = mock_logger.debug.call_args[0][0]
+        log_data = json.loads(call_args)
+        assert log_data['level'] == 'DEBUG'
+        assert log_data['message'] == 'Debug message'
+
+
+class TestClientFactories:
+    """Test boto3 client factory functions"""
+    
+    @patch('audio_processor.boto3')
+    def test_get_s3_client_creates_client(self, mock_boto3):
+        """Test that get_s3_client creates an S3 client"""
+        from audio_processor import get_s3_client
+        
+        mock_client = MagicMock()
+        mock_boto3.client.return_value = mock_client
+        
+        result = get_s3_client()
+        
+        mock_boto3.client.assert_called_once_with('s3')
+        assert result == mock_client
+    
+    @patch('audio_processor.boto3')
+    def test_get_polly_client_creates_client(self, mock_boto3):
+        """Test that get_polly_client creates a Polly client"""
+        from audio_processor import get_polly_client
+        
+        mock_client = MagicMock()
+        mock_boto3.client.return_value = mock_client
+        
+        result = get_polly_client()
+        
+        mock_boto3.client.assert_called_once_with('polly')
+        assert result == mock_client
