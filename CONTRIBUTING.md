@@ -257,7 +257,7 @@ def test_descriptive_name_of_what_is_tested():
 - Use descriptive test names
 - Include docstrings explaining what is tested
 - Use arrange-act-assert pattern
-- Tests should be fast (all 138 tests run in ~14 seconds)
+- Tests should be fast (all 143 tests run in ~52 seconds)
 - Tests should be independent (no shared state)
 
 ### Running Tests
