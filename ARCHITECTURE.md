@@ -127,7 +127,49 @@ The end-to-end flow of a single audio file through the pipeline:
 
 ---
 
-## 4. Architecture Diagrams
+## 4. TDD Test Coverage Journey
+
+This project achieved **100% code coverage** through strict Test-Driven Development across 13 issues. The following diagram shows the progressive test growth:
+
+```mermaid
+%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#90EE90','primaryTextColor':'#000','primaryBorderColor':'#2E8B57','lineColor':'#4169E1','secondaryColor':'#87CEEB','tertiaryColor':'#FFD700'}}}%%
+graph LR
+    Start[Issue #2<br/>Design Only<br/>0 tests] --> I3[Issue #3<br/>S3 + EventBridge<br/>10 tests]
+    I3 --> I4[Issue #4<br/>Step Functions<br/>15 tests]
+    I4 --> I5[Issue #5<br/>DynamoDB + I/O<br/>20 tests]
+    I5 --> I6[Issue #6<br/>SNS + Errors<br/>25 tests]
+    I6 --> I7[Issue #7<br/>Lambda Skeleton<br/>30 tests]
+    I7 --> I8[Issue #8<br/>Pipeline Wiring<br/>38 tests]
+    I8 --> I9[Issue #9<br/>Testing + Deploy<br/>46 tests]
+    I9 --> I10[Issue #10<br/>Error Handling<br/>58 tests]
+    I10 --> I11[Issue #11<br/>Audio Processing<br/>115 tests]
+    I11 --> I12[Issue #12<br/>E2E Validation<br/>138 tests]
+    I12 --> I15[Issue #15<br/>Code Quality<br/>143 tests<br/>✅ 100% Coverage]
+    
+    style Start fill:#E8E8E8
+    style I3 fill:#E0F2F1
+    style I4 fill:#B2DFDB
+    style I5 fill:#80CBC4
+    style I6 fill:#4DB6AC
+    style I7 fill:#26A69A
+    style I8 fill:#00897B
+    style I9 fill:#00796B
+    style I10 fill:#00695C
+    style I11 fill:#004D40
+    style I12 fill:#66BB6A
+    style I15 fill:#4CAF50,stroke:#2E7D32,stroke-width:3px
+```
+
+**Key Milestones:**
+- **Issue #3-7**: Foundation (10→30 tests) - Basic infrastructure components
+- **Issue #8-10**: Integration (38→58 tests) - Pipeline wiring and error handling  
+- **Issue #11**: Major expansion (115 tests) - Complete audio processing implementation
+- **Issue #12**: E2E validation (138 tests) - Comprehensive end-to-end scenarios
+- **Issue #15**: Final polish (143 tests, 100% coverage) - Quality reflection and completion
+
+---
+
+## 5. Architecture Diagrams
 
 ### 4.1 Multi-Environment Deployment Architecture
 
@@ -140,7 +182,7 @@ graph TB
     subgraph cicd["CI/CD Pipeline (CDK Pipelines)"]
         pipeline["AWS CodePipeline"]
         source_stage["Source Stage\nGitHub/CodeCommit"]
-        synth["Synth Stage\nCodeBuild\n• Install dependencies\n• Run pytest (95 tests)\n• cdk synth"]
+        synth["Synth Stage\nCodeBuild\n• Install dependencies\n• Run pytest (143 tests)\n• cdk synth"]
     end
     
     subgraph environments["Deployment Environments"]
@@ -280,7 +322,7 @@ flowchart TD
 
 ---
 
-## 5. End-to-End Flow Details
+## 6. End-to-End Flow Details
 
 ### Success Path (Happy Path)
 
@@ -391,7 +433,7 @@ All validation errors:
 
 ---
 
-## 6. Security
+## 7. Security
 
 - **Private buckets** — Both S3 buckets block all public access; uploads use
   pre-signed URLs and downloads are mediated by the application.
@@ -411,7 +453,7 @@ All validation errors:
 
 ---
 
-## 7. Observability & Error Handling Strategy
+## 8. Observability & Error Handling Strategy
 
 ### 7.1 Observability
 
@@ -477,7 +519,7 @@ All AWS service tasks have automatic retry policies configured:
 
 ---
 
-## 8. Cost Considerations
+## 9. Cost Considerations
 
 - **Serverless / pay-per-use** — S3, Lambda, Step Functions, DynamoDB (on-demand),
   SNS, and EventBridge cost effectively nothing at idle; the system scales with
@@ -491,7 +533,7 @@ All AWS service tasks have automatic retry policies configured:
 
 ---
 
-## 9. Multi-Environment Support
+## 10. Multi-Environment Support
 
 The infrastructure supports **three environments**: `dev`, `stage`, and `prod`, selected through 
 **CDK context** (e.g., `cdk deploy -c env=prod`). Each environment has tailored configurations:
@@ -554,7 +596,7 @@ The pipeline ensures:
 
 ---
 
-## 10. Testing Strategy
+## 11. Testing Strategy
 
 The project follows **Test-Driven Development (TDD)** principles with comprehensive test coverage:
 
@@ -608,7 +650,7 @@ All tests must pass before deployment proceeds.
 
 ---
 
-## 11. Future Extensibility
+## 12. Future Extensibility
 
 - **New processing steps** — Additional Step Functions tasks (transcription,
   loudness normalization, format conversion) slot in without changing producers.
@@ -623,7 +665,7 @@ All tests must pass before deployment proceeds.
 
 ---
 
-## 11. Implementation Status
+## 13. Implementation Status
 
 ### Issue #3: Core S3 Buckets + EventBridge Rule (✅ Completed)
 
